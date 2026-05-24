@@ -9,7 +9,7 @@ from .dataset import build_dataset
 from .models import batch_images_for_mode, create_model, forward_for_mode
 from .splits import recording_kfolds, select_splits
 
-print_freq = 300
+print_freq = 30
 
 def normalize_gaze(gaze, mean, std):
     return (gaze - mean) / std
