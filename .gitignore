@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+vit_*_smoke_test/
+vit_gaze_segmenter_output/
+vit_gaze_segments/
+debug_inpaint_masks/
+.DS_Store
