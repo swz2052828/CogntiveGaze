@@ -50,11 +50,13 @@ python vit_gaze_segmenter.py train ^
   --fold-index $SLURM_ARRAY_TASK_ID
 ```
 
-Each epoch prints Slurm-friendly summary lines:
+Each training batch prints Slurm-friendly progress lines:
 
 ```text
-Fold 0 epoch 1/10 train_loss=... val_loss=... val_coord_error=... epoch_time_sec=...
+Fold 0 epoch 1/10 batch 1/123 batch_loss=... running_train_loss=... batch_time_sec=...
 ```
+
+Validation is still summarized after each epoch so checkpoints can be selected by validation loss.
 
 Checkpoints are saved as:
 

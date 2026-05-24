@@ -107,6 +107,9 @@ def train_one_fold(args, dataset, split, device):
             gaze_std=gaze_std_device,
             device=device,
             input_mode=args.input_mode,
+            fold=fold,
+            epoch=epoch,
+            total_epochs=args.epochs,
         )
         val_loss, val_error = evaluate(
             model=model,
@@ -118,10 +121,10 @@ def train_one_fold(args, dataset, split, device):
         )
         epoch_time = time.perf_counter() - epoch_start
         print(
-            f"Fold {fold} epoch {epoch + 1}/{args.epochs} "
-            f"train_loss={train_loss:.6f} "
+            f"Fold {fold} epoch {epoch + 1}/{args.epochs} validation "
             f"val_loss={val_loss:.6f} "
             f"val_coord_error={val_error:.6f} "
+            f"train_loss_mean={train_loss:.6f} "
             f"epoch_time_sec={epoch_time:.2f}"
         )
 
@@ -159,11 +162,24 @@ def train_one_fold(args, dataset, split, device):
     }
 
 
-def train_epoch(model, loader, optimizer, gaze_mean, gaze_std, device, input_mode):
+def train_epoch(
+    model,
+    loader,
+    optimizer,
+    gaze_mean,
+    gaze_std,
+    device,
+    input_mode,
+    fold,
+    epoch,
+    total_epochs,
+):
     model.train()
     total_loss = 0.0
     total_count = 0
-    for batch in loader:
+    total_batches = len(loader)
+    for batch_idx, batch in enumerate(loader, start=1):
+        batch_start = time.perf_counter()
         first, second = batch_images_for_mode(batch, input_mode, device)
         target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
 
@@ -177,6 +193,15 @@ def train_epoch(model, loader, optimizer, gaze_mean, gaze_std, device, input_mod
         batch_size = first.size(0)
         total_loss += loss.item() * batch_size
         total_count += batch_size
+        running_loss = total_loss / max(1, total_count)
+        batch_time = time.perf_counter() - batch_start
+        print(
+            f"Fold {fold} epoch {epoch + 1}/{total_epochs} "
+            f"batch {batch_idx}/{total_batches} "
+            f"batch_loss={loss.item():.6f} "
+            f"running_train_loss={running_loss:.6f} "
+            f"batch_time_sec={batch_time:.2f}"
+        )
     return total_loss / max(1, total_count)
 
 
