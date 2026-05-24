@@ -9,6 +9,7 @@ from .dataset import build_dataset
 from .models import batch_images_for_mode, create_model, forward_for_mode
 from .splits import recording_kfolds, select_splits
 
+print_freq = 10
 
 def normalize_gaze(gaze, mean, std):
     return (gaze - mean) / std
@@ -195,13 +196,14 @@ def train_epoch(
         total_count += batch_size
         running_loss = total_loss / max(1, total_count)
         batch_time = time.perf_counter() - batch_start
-        print(
-            f"Fold {fold} epoch {epoch + 1}/{total_epochs} "
-            f"batch {batch_idx}/{total_batches} "
-            f"batch_loss={loss.item():.6f} "
-            f"running_train_loss={running_loss:.6f} "
-            f"batch_time_sec={batch_time:.2f}"
-        )
+        if (batch_idx % print_freq) == 0:
+            print(
+                f"Fold {fold} epoch {epoch + 1}/{total_epochs} "
+                f"batch {batch_idx}/{total_batches} "
+                f"batch_loss={loss.item():.6f} "
+                f"running_train_loss={running_loss:.6f} "
+                f"batch_time_sec={batch_time:.2f}"
+            )
     return total_loss / max(1, total_count)
 
 
