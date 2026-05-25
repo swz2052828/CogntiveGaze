@@ -80,8 +80,18 @@ def build_parser():
         help=(
             "raw is recommended for the single-image model. paired keeps the "
             "older raw+synthetic fusion. multistream uses face + left eye + "
-            "right eye (+ optional face-grid) with a shared ViT-B/16 backbone, "
-            "matching the project's CNN baselines (ITracker / MGazeNet / AFFNet)."
+            "right eye (+ optional face-grid) and selects a backbone via --backbone."
+        ),
+    )
+    train_parser.add_argument(
+        "--backbone",
+        choices=("vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        default="vit",
+        help=(
+            "Multistream backbone. vit (default) = shared ViT-B/16 with optional "
+            "grid. itracker / mobilenet_v3 / affnet / mgazenet are CNN baselines "
+            "ported from the project's reference implementations; all four "
+            "require --use-grid (architectures use or condition on the face-grid)."
         ),
     )
     train_parser.add_argument("--weights", choices=("none", "imagenet"), default="none")
