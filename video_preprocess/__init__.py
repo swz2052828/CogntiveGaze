@@ -17,14 +17,27 @@ those in, otherwise they are NaN (useful for inference-only datasets).
 
 from .bbox import bbox_from_points, pad_bbox, square_bbox, to_int_box
 from .blink import compute_ear_per_eye, is_blink
+from .blink_detectors import BLINK_DETECTORS, build_blink_detector
+from .detection_base import BlinkDetector, EyeDetector, FaceDetector
 from .detector import LandmarkSet, VideoFaceDetector
+from .eye_detectors import EYE_DETECTORS, build_eye_detector
+from .face_detectors import FACE_DETECTORS, build_face_detector
 from .face_grid import face_grid_params
 from .metadata_writer import MetadataAccumulator
 from .pipeline import process_video
 
 __all__ = [
+    "BlinkDetector",
+    "EyeDetector",
+    "FaceDetector",
     "LandmarkSet",
     "VideoFaceDetector",
+    "BLINK_DETECTORS",
+    "EYE_DETECTORS",
+    "FACE_DETECTORS",
+    "build_blink_detector",
+    "build_eye_detector",
+    "build_face_detector",
     "bbox_from_points",
     "pad_bbox",
     "square_bbox",

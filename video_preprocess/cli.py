@@ -1,32 +1,42 @@
 """Batch CLI: turn one or more videos into iTracker-style crops + metadata.mat.
 
-Example:
-  python -m video_preprocess.cli \\
-    --video ./videos/sub01.mp4 --rec 1 --gaze-csv ./labels/sub01.csv \\
-    --video ./videos/sub02.mp4 --rec 2 --gaze-csv ./labels/sub02.csv \\
-    --output-root ./datasets/ProcessedFromVideo \\
-    --mean-path mean7 \\
-    --skip-blinks
+Swappable detectors via --face-method / --eye-method / --blink-method. Drop
+--vis-dir <path> to also save annotated frames for visual comparison.
 
-This drops in for vit_gaze.MultiStreamGazeDataset:
-  python vit_gaze_segmenter.py train \\
-    --data-path ./datasets/ProcessedFromVideo \\
-    --eye-path  ./datasets/ProcessedFromVideo \\
-    --mean-path mean7 \\
-    --input-mode multistream \\
-    --weights imagenet
+Example - compare two strategies on the same video by running twice:
+
+  python -m video_preprocess.cli \\
+    --video ./videos/sub01.mp4 --rec 1 \\
+    --output-root ./datasets/StrategyA \\
+    --face-method mediapipe_facemesh \\
+    --eye-method  facemesh_iris \\
+    --blink-method ear \\
+    --vis-dir ./vis/StrategyA
+
+  python -m video_preprocess.cli \\
+    --video ./videos/sub01.mp4 --rec 1 \\
+    --output-root ./datasets/StrategyB \\
+    --face-method opencv_haar \\
+    --eye-method  opencv_haar \\
+    --blink-method contour_ratio \\
+    --vis-dir ./vis/StrategyB
+
+Then inspect ./vis/StrategyA and ./vis/StrategyB side by side, and train
+multistream ViT on each dataset to compare downstream gaze accuracy.
 """
 
 import argparse
 import csv
 from pathlib import Path
 
+from .blink_detectors import BLINK_DETECTORS, build_blink_detector
+from .eye_detectors import EYE_DETECTORS, build_eye_detector
+from .face_detectors import FACE_DETECTORS, build_face_detector
 from .metadata_writer import MetadataAccumulator
 from .pipeline import process_video
 
 
 def _load_gaze_csv(path: Path):
-    """Load a CSV with columns frame_index, gaze_x, gaze_y; return a lookup fn."""
     table = {}
     with open(path, "r", newline="") as fh:
         reader = csv.DictReader(fh)
@@ -45,10 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Preprocess smartphone video(s) into iTracker-format face + eye "
-            "crops + metadata.mat compatible with vit_gaze and the project's "
-            "CNN baselines."
+            "crops + metadata.mat. Detectors are swappable per stage for "
+            "side-by-side evaluation."
         )
     )
+
     parser.add_argument(
         "--video",
         type=Path,
@@ -80,32 +91,66 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sub-directory under --output-root where metadata.mat is written.",
     )
 
+    parser.add_argument(
+        "--face-method",
+        choices=sorted(FACE_DETECTORS.keys()),
+        default="mediapipe_facemesh",
+    )
+    parser.add_argument(
+        "--eye-method",
+        choices=sorted(EYE_DETECTORS.keys()),
+        default="facemesh_contour",
+    )
+    parser.add_argument(
+        "--blink-method",
+        choices=sorted(BLINK_DETECTORS.keys()),
+        default="ear",
+    )
+    parser.add_argument(
+        "--blink-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Override the blink detector's default threshold. ear default 0.2; "
+            "contour_ratio default 0.18; iris_visibility default 0.04."
+        ),
+    )
+
     parser.add_argument("--face-size", type=int, default=224)
     parser.add_argument("--eye-size", type=int, default=224)
     parser.add_argument("--grid-size", type=int, default=25)
-
     parser.add_argument("--face-pad", type=float, default=0.1)
     parser.add_argument("--eye-pad-w", type=float, default=0.5)
     parser.add_argument("--eye-pad-h", type=float, default=0.8)
 
-    parser.add_argument("--blink-threshold", type=float, default=0.2)
     parser.add_argument(
         "--skip-blinks",
         action="store_true",
-        help="Drop blink frames from output. Default keeps them, marks them in metadata.",
+        help="Drop blink frames from output. Default keeps them, marks in metadata.",
     )
-
-    parser.add_argument(
-        "--frame-stride",
-        type=int,
-        default=1,
-        help="Take every Nth frame from each video. 1 = every frame.",
-    )
+    parser.add_argument("--frame-stride", type=int, default=1)
     parser.add_argument("--max-frames", type=int, default=None)
 
     parser.add_argument("--face-folder", default="appleFace")
     parser.add_argument("--left-eye-folder", default="appleLeftEye")
     parser.add_argument("--right-eye-folder", default="appleRightEye")
+
+    parser.add_argument(
+        "--vis-dir",
+        type=Path,
+        default=None,
+        help=(
+            "If set, write per-frame annotated JPGs here for visual comparison "
+            "of detector strategies. Layout: <vis-dir>/<rec>/<frame>.jpg."
+        ),
+    )
+    parser.add_argument(
+        "--vis-stride",
+        type=int,
+        default=1,
+        help="Write 1-in-N annotated frames. Use to control vis disk usage.",
+    )
+
     return parser
 
 
@@ -121,17 +166,24 @@ def main():
         gaze_lookup = None
         if args.gaze_csv is not None:
             gaze_lookup = _load_gaze_csv(args.gaze_csv[i])
+
+        face_det = build_face_detector(args.face_method)
+        eye_det = build_eye_detector(args.eye_method)
+        blink_det = build_blink_detector(args.blink_method, threshold=args.blink_threshold)
+
         per_video = process_video(
             video_path=video,
             output_root=args.output_root,
             rec_num=rec,
+            face_detector=face_det,
+            eye_detector=eye_det,
+            blink_detector=blink_det,
             face_size=args.face_size,
             eye_size=args.eye_size,
             grid_size=args.grid_size,
             face_pad=args.face_pad,
             eye_pad_w=args.eye_pad_w,
             eye_pad_h=args.eye_pad_h,
-            blink_threshold=args.blink_threshold,
             skip_blinks=args.skip_blinks,
             frame_stride=args.frame_stride,
             max_frames=args.max_frames,
@@ -139,12 +191,18 @@ def main():
             face_folder=args.face_folder,
             left_eye_folder=args.left_eye_folder,
             right_eye_folder=args.right_eye_folder,
+            vis_dir=args.vis_dir,
+            vis_stride=args.vis_stride,
         )
         combined.extend(per_video.rows)
 
     metadata_path = args.output_root / args.mean_path / "metadata.mat"
     combined.write(metadata_path)
-    print(f"Wrote {len(combined.rows)} rows to {metadata_path}")
+    print(
+        f"Wrote {len(combined.rows)} rows to {metadata_path} "
+        f"(methods: face={args.face_method} eye={args.eye_method} "
+        f"blink={args.blink_method})"
+    )
 
 
 if __name__ == "__main__":
