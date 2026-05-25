@@ -31,6 +31,34 @@ def add_common_args(parser):
     parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument("--allow-missing-synthetic", action="store_true")
     parser.add_argument("--cpu", action="store_true")
+    parser.add_argument(
+        "--eye-path",
+        default=None,
+        help="Root for preprocessed eye crops (multistream only). "
+             "Layout: <eye-path>/<rec>/appleLeftEye/<frame>.jpg.",
+    )
+    parser.add_argument("--face-folder", default="appleFace")
+    parser.add_argument("--left-eye-folder", default="appleLeftEye")
+    parser.add_argument("--right-eye-folder", default="appleRightEye")
+    parser.add_argument(
+        "--eye-size",
+        type=int,
+        default=224,
+        help="Eye crop side length (multistream only). Matches existing CNN pipeline.",
+    )
+    parser.add_argument(
+        "--use-grid",
+        action="store_true",
+        help="Include face-grid input (multistream only). Off by default because "
+             "for seated subjects far from the camera the grid is near-constant "
+             "per subject and provides no within-subject signal.",
+    )
+    parser.add_argument(
+        "--grid-size",
+        type=int,
+        default=25,
+        help="Side length of the face-grid (multistream + --use-grid only).",
+    )
 
 
 def build_parser():
@@ -47,9 +75,14 @@ def build_parser():
     train_parser.add_argument("--out-path", default="./vit_gaze_segmenter_output")
     train_parser.add_argument(
         "--input-mode",
-        choices=("raw", "synthetic", "paired"),
+        choices=("raw", "synthetic", "paired", "multistream"),
         default="raw",
-        help="raw is recommended. paired keeps the older raw+synthetic fusion model.",
+        help=(
+            "raw is recommended for the single-image model. paired keeps the "
+            "older raw+synthetic fusion. multistream uses face + left eye + "
+            "right eye (+ optional face-grid) with a shared ViT-B/16 backbone, "
+            "matching the project's CNN baselines (ITracker / MGazeNet / AFFNet)."
+        ),
     )
     train_parser.add_argument("--weights", choices=("none", "imagenet"), default="none")
     train_parser.add_argument("--freeze-encoder", action="store_true")

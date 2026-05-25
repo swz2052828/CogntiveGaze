@@ -5,8 +5,14 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as data
 
-from .dataset import build_dataset
-from .models import batch_images_for_mode, create_model, forward_for_mode
+from .dataset import build_dataset, build_multistream_dataset
+from .models import (
+    batch_images_for_mode,
+    batch_multistream_for_mode,
+    create_model,
+    forward_for_mode,
+    forward_multistream,
+)
 from .splits import recording_kfolds, select_splits
 
 print_freq = 30
@@ -33,9 +39,16 @@ def make_loader(dataset, indices, batch_size, shuffle, num_workers):
 def train(args):
     start_time = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
-    use_synthetic = args.input_mode in ("synthetic", "paired")
-    require_synthetic = args.input_mode in ("synthetic", "paired") and not args.allow_missing_synthetic
-    dataset = build_dataset(args, use_synthetic=use_synthetic, require_synthetic=require_synthetic)
+    if args.input_mode == "multistream":
+        dataset = build_multistream_dataset(args)
+    else:
+        use_synthetic = args.input_mode in ("synthetic", "paired")
+        require_synthetic = (
+            args.input_mode in ("synthetic", "paired") and not args.allow_missing_synthetic
+        )
+        dataset = build_dataset(
+            args, use_synthetic=use_synthetic, require_synthetic=require_synthetic
+        )
 
     all_splits = recording_kfolds(dataset.unique_recordings(), folds=args.folds, seed=args.seed)
     splits = select_splits(all_splits, args.fold_index)
@@ -81,7 +94,13 @@ def train_one_fold(args, dataset, split, device):
     gaze_mean = torch.from_numpy(dataset.gazes[train_indices].mean(axis=0)).float()
     gaze_std = torch.from_numpy(dataset.gazes[train_indices].std(axis=0)).float().clamp_min(1e-6)
 
-    model = create_model(args.input_mode, weights=args.weights, freeze_encoder=args.freeze_encoder).to(device)
+    model = create_model(
+        args.input_mode,
+        weights=args.weights,
+        freeze_encoder=args.freeze_encoder,
+        use_grid=getattr(args, "use_grid", False),
+        grid_size=getattr(args, "grid_size", 25),
+    ).to(device)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=args.lr,
@@ -181,17 +200,14 @@ def train_epoch(
     total_batches = len(loader)
     for batch_idx, batch in enumerate(loader, start=1):
         batch_start = time.perf_counter()
-        first, second = batch_images_for_mode(batch, input_mode, device)
+        pred, batch_size = _predict(model, batch, input_mode, device)
         target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
-
-        pred = forward_for_mode(model, input_mode, first, second)
         loss = F.smooth_l1_loss(pred, target)
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
 
-        batch_size = first.size(0)
         total_loss += loss.item() * batch_size
         total_count += batch_size
         running_loss = total_loss / max(1, total_count)
@@ -214,21 +230,30 @@ def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode):
     total_error = 0.0
     total_count = 0
     for batch in loader:
-        first, second = batch_images_for_mode(batch, input_mode, device)
+        pred_norm, batch_size = _predict(model, batch, input_mode, device)
         gaze = batch["gaze"].to(device)
         target = normalize_gaze(gaze, gaze_mean, gaze_std)
 
-        pred_norm = forward_for_mode(model, input_mode, first, second)
         pred = denormalize_gaze(pred_norm, gaze_mean, gaze_std)
         loss = F.smooth_l1_loss(pred_norm, target, reduction="sum")
         error = torch.linalg.norm(pred - gaze, dim=1).sum()
 
-        batch_size = first.size(0)
         total_loss += loss.item()
         total_error += error.item()
         total_count += batch_size
 
     return total_loss / max(1, total_count), total_error / max(1, total_count)
+
+
+def _predict(model, batch, input_mode, device):
+    """Dispatch a batch through the right forward path; return (pred, batch_size)."""
+    if input_mode == "multistream":
+        inputs = batch_multistream_for_mode(batch, device)
+        pred = forward_multistream(model, inputs)
+        return pred, inputs["face"].size(0)
+    first, second = batch_images_for_mode(batch, input_mode, device)
+    pred = forward_for_mode(model, input_mode, first, second)
+    return pred, first.size(0)
 
 
 def load_checkpoint(checkpoint_path, device):
@@ -239,6 +264,8 @@ def load_checkpoint(checkpoint_path, device):
         input_mode=input_mode,
         weights="none",
         freeze_encoder=bool(saved_args.get("freeze_encoder", False)),
+        use_grid=bool(saved_args.get("use_grid", False)),
+        grid_size=int(saved_args.get("grid_size", 25)),
     ).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
