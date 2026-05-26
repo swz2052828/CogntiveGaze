@@ -1,3 +1,5 @@
+import contextlib
+
 import cv2
 import numpy as np
 import torch
@@ -58,13 +60,32 @@ def smoothgrad_single_saliency(model, image, target_gaze_norm, samples, noise_st
 
 
 @torch.no_grad()
-def occlusion_single_saliency(model, image, target_gaze_norm, patch_size, stride):
+def occlusion_single_saliency(
+    model,
+    image,
+    target_gaze_norm,
+    patch_size,
+    stride,
+    batch_size=16,
+    amp_autocast=None,
+):
+    """Occlusion attribution with batched forward passes.
+
+    Mathematically identical to occluding one patch at a time, but evaluates up
+    to ``batch_size`` occluded variants in a single forward pass, which removes
+    the per-patch Python/launch overhead that dominated the original loop. Raise
+    ``batch_size`` on a high-VRAM GPU and lower it on an 8 GB card; the result
+    does not depend on it. ``amp_autocast`` is an optional zero-arg context
+    manager factory (used only when the caller opted into mixed precision).
+    """
+    autocast_factory = amp_autocast if amp_autocast is not None else contextlib.nullcontext
     _, _, height, width = image.shape
     heatmap = torch.zeros((height, width), device=image.device)
     counts = torch.zeros((height, width), device=image.device)
 
-    base_pred = model(image)
-    base_loss = F.mse_loss(base_pred, target_gaze_norm, reduction="sum")
+    with autocast_factory():
+        base_pred = model(image)
+    base_loss = ((base_pred.float() - target_gaze_norm.float()) ** 2).sum()
 
     y_positions = list(range(0, max(1, height - patch_size + 1), stride))
     x_positions = list(range(0, max(1, width - patch_size + 1), stride))
@@ -73,14 +94,18 @@ def occlusion_single_saliency(model, image, target_gaze_norm, patch_size, stride
     if x_positions[-1] != width - patch_size:
         x_positions.append(max(0, width - patch_size))
 
-    for y in y_positions:
-        for x in x_positions:
-            occluded = image.clone()
-            occluded[:, :, y : y + patch_size, x : x + patch_size] = 0.0
-            pred = model(occluded)
-            score = F.mse_loss(pred, target_gaze_norm, reduction="sum") - base_loss
-            score = torch.clamp(score, min=0.0)
-            heatmap[y : y + patch_size, x : x + patch_size] += score
+    positions = [(y, x) for y in y_positions for x in x_positions]
+    for start in range(0, len(positions), max(1, batch_size)):
+        chunk = positions[start : start + max(1, batch_size)]
+        occluded = image.expand(len(chunk), -1, -1, -1).clone()
+        for i, (y, x) in enumerate(chunk):
+            occluded[i, :, y : y + patch_size, x : x + patch_size] = 0.0
+        with autocast_factory():
+            preds = model(occluded)
+        losses = ((preds.float() - target_gaze_norm.float()) ** 2).sum(dim=1)
+        scores = torch.clamp(losses - base_loss, min=0.0)
+        for i, (y, x) in enumerate(chunk):
+            heatmap[y : y + patch_size, x : x + patch_size] += scores[i]
             counts[y : y + patch_size, x : x + patch_size] += 1.0
 
     heatmap = heatmap / counts.clamp_min(1.0)
