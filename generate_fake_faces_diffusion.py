@@ -67,6 +67,14 @@ def parse_args():
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--cpu-offload", action="store_true")
+    parser.add_argument(
+        "--attention-slicing",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="Attention slicing trades speed for VRAM. 'auto' enables it only on "
+             "low-VRAM GPUs (e.g. the 8 GB 2070 Super) and leaves it off on "
+             "high-VRAM GPUs (e.g. the 5090) where it would only slow generation.",
+    )
     parser.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
     parser.add_argument(
         "--weight-format",
@@ -137,7 +145,22 @@ def iter_image_pairs(args):
             yield src_path, dst_dir / src_path.name
 
 
-def load_pipeline(model_id, device, cpu_offload, weight_format):
+def should_slice_attention(mode, torch, device):
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    if device != "cuda" or not torch.cuda.is_available():
+        return False
+    try:
+        total_bytes = torch.cuda.get_device_properties(0).total_memory
+    except Exception:
+        return True
+    # Slice only when VRAM is tight (< 10 GiB), e.g. the 8 GB 2070 Super.
+    return total_bytes < 10 * (1024 ** 3)
+
+
+def load_pipeline(model_id, device, cpu_offload, weight_format, attention_slicing="auto"):
     try:
         import torch
         from diffusers import DPMSolverMultistepScheduler, StableDiffusionInpaintPipeline
@@ -182,7 +205,13 @@ def load_pipeline(model_id, device, cpu_offload, weight_format):
     else:
         pipe = pipe.to(device)
 
-    pipe.enable_attention_slicing()
+    if should_slice_attention(attention_slicing, torch, device):
+        pipe.enable_attention_slicing()
+        print("Attention slicing: on (low VRAM).")
+    else:
+        if hasattr(pipe, "disable_attention_slicing"):
+            pipe.disable_attention_slicing()
+        print("Attention slicing: off (high VRAM, faster).")
     return pipe, torch, device
 
 
@@ -409,7 +438,9 @@ def main():
         return
 
     prepare_output_dirs(jobs, args.debug_mask_dir)
-    pipe, torch, device = load_pipeline(args.model_id, args.device, args.cpu_offload, args.weight_format)
+    pipe, torch, device = load_pipeline(
+        args.model_id, args.device, args.cpu_offload, args.weight_format, args.attention_slicing
+    )
 
     generated = 0
     skipped = 0
