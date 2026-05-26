@@ -18,6 +18,38 @@ from .splits import recording_kfolds, select_splits
 
 print_freq = 30
 
+
+class _Logger:
+    """Routes every training/optimization log line to stdout and, when
+    ``--log-file`` is set, also appends a timestamped copy to that file.
+
+    The file is line-buffered so it can be followed live with ``tail -f`` and
+    survives a crash. Stdout output is left exactly as before, so Slurm parsing
+    and live monitoring keep working.
+    """
+
+    def __init__(self):
+        self._fh = None
+
+    def open(self, path):
+        if path:
+            self._fh = open(path, "a", buffering=1)
+            self._fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] === training log started ===\n")
+
+    def __call__(self, msg=""):
+        print(msg)
+        if self._fh is not None:
+            self._fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+
+    def close(self):
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
+
+
+log = _Logger()
+
+
 def normalize_gaze(gaze, mean, std):
     return (gaze - mean) / std
 
@@ -44,6 +76,14 @@ def make_loader(dataset, indices, batch_size, shuffle, num_workers):
 
 
 def train(args):
+    log.open(getattr(args, "log_file", None))
+    try:
+        _run_training(args)
+    finally:
+        log.close()
+
+
+def _run_training(args):
     start_time = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
@@ -61,10 +101,10 @@ def train(args):
     all_splits = recording_kfolds(dataset.unique_recordings(), folds=args.folds, seed=args.seed)
     splits = select_splits(all_splits, args.fold_index)
 
-    print(f"Device: {device}")
-    print(f"Cross validation: {args.folds} folds by recording id")
+    log(f"Device: {device}")
+    log(f"Cross validation: {args.folds} folds by recording id")
     if args.fold_index is not None:
-        print(f"Running only fold {args.fold_index}")
+        log(f"Running only fold {args.fold_index}")
 
     summaries = []
     for split in splits:
@@ -75,7 +115,7 @@ def train(args):
     if summaries:
         mean_val_loss = sum(item["best_val_loss"] for item in summaries) / len(summaries)
         mean_val_error = sum(item["best_val_error"] for item in summaries) / len(summaries)
-        print(
+        log(
             f"CV summary folds={len(summaries)} "
             f"mean_best_val_loss={mean_val_loss:.6f} "
             f"mean_best_val_coord_error={mean_val_error:.6f} "
@@ -91,7 +131,7 @@ def train_one_fold(args, dataset, split, device):
     if not train_indices or not val_indices:
         raise RuntimeError(f"Fold {fold} has empty train or validation indices.")
 
-    print(
+    log(
         f"Fold {fold} start "
         f"train_recordings={split['train_recordings']} "
         f"val_recordings={split['val_recordings']} "
@@ -119,7 +159,7 @@ def train_one_fold(args, dataset, split, device):
 
     amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
     scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
-    print(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
+    log(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
 
     train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
@@ -159,7 +199,7 @@ def train_one_fold(args, dataset, split, device):
             amp_dtype=amp_dtype,
         )
         epoch_time = time.perf_counter() - epoch_start
-        print(
+        log(
             f"Fold {fold} epoch {epoch + 1}/{args.epochs} validation "
             f"val_loss={val_loss:.6f} "
             f"val_coord_error={val_error:.6f} "
@@ -187,7 +227,7 @@ def train_one_fold(args, dataset, split, device):
             torch.save(checkpoint, out_path / f"fold{fold}_best_vit_gaze_segmenter.pth")
 
     fold_time = time.perf_counter() - fold_start
-    print(
+    log(
         f"Fold {fold} done "
         f"best_val_loss={best_val_loss:.6f} "
         f"best_val_coord_error={best_val_error:.6f} "
@@ -241,7 +281,7 @@ def train_epoch(
         running_loss = total_loss / max(1, total_count)
         batch_time = time.perf_counter() - batch_start
         if (batch_idx % print_freq) == 0:
-            print(
+            log(
                 f"Fold {fold} epoch {epoch + 1}/{total_epochs} "
                 f"batch {batch_idx}/{total_batches} "
                 f"batch_loss={loss.item():.6f} "
@@ -287,14 +327,14 @@ def _unwrap(model):
 def _maybe_compile(model):
     compile_fn = getattr(torch, "compile", None)
     if compile_fn is None:
-        print("torch.compile unavailable; running eagerly.")
+        log("torch.compile unavailable; running eagerly.")
         return model
     try:
         # dynamic=True avoids guard recompiles on the ragged final batch and on
         # the stacked (3*B) multistream encoder input.
         return compile_fn(model, dynamic=True)
     except Exception as exc:  # pragma: no cover - backend/hardware dependent
-        print(f"torch.compile failed ({exc}); running eagerly.")
+        log(f"torch.compile failed ({exc}); running eagerly.")
         return model
 
 

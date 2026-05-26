@@ -73,6 +73,40 @@ If ImageNet weights are not available in your environment, use:
 
 But expect worse gaze accuracy. Attribution is only meaningful after gaze prediction error is acceptably low.
 
+## Performance and tuning
+
+The training command auto-detects the GPU; the same flags work on both the
+RTX 5090 and the 8 GB RTX 2070 Super. TF32, the cuDNN autotuner, warm
+dataloaders, and the single-pass shared encoder (multistream) are on
+automatically and do not change results.
+
+Fast, accuracy-safe presets:
+
+```bash
+# RTX 5090: bf16 autocast + compile
+... train ... --amp --compile
+
+# RTX 2070 Super (8 GB): fp16 autocast (also helps fit the 8 GB card)
+... train ... --amp
+```
+
+Key flags: `--amp` (mixed precision, off by default; biggest reliable win),
+`--compile` (`torch.compile`, extra throughput after a one-time warmup),
+`--no-tf32` (force bit-exact fp32), `--num-workers` (match your allocated CPUs).
+`--batch-size` is the one lever that is **not** accuracy-neutral — a larger batch
+helps utilization but shifts the optimization dynamics, so validation numbers
+can move. See the README "Performance and tuning" section for the full table.
+
+To capture the optimization log in a readable file (in addition to stdout), pass
+`--log-file PATH`. It is timestamped and line-buffered, so you can `tail -f` it
+live — handy on Slurm where stdout is often buffered or split across array-task
+`.out` files. Combine with `--fold-index` for a per-fold log:
+
+```bash
+... train ... --fold-index $SLURM_ARRAY_TASK_ID \
+              --log-file train_fold${SLURM_ARRAY_TASK_ID}.log
+```
+
 ## 2. Explain Raw Image
 
 Occlusion is the recommended segmentation method because it directly measures how much gaze error increases when each image patch is hidden.

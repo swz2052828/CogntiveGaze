@@ -117,6 +117,15 @@ def build_parser():
         default=None,
         help="Run only one 0-based fold. Useful with Slurm array jobs.",
     )
+    train_parser.add_argument(
+        "--log-file",
+        default=None,
+        help="Also append every training/optimization log line to this file "
+             "(timestamped, line-buffered so you can `tail -f` it live). Stdout is "
+             "unchanged. Handy on Slurm, where stdout is often buffered or split "
+             "across array-task .out files. Combine with --fold-index for a "
+             "per-fold log, e.g. --log-file train_fold${SLURM_ARRAY_TASK_ID}.log.",
+    )
     train_parser.add_argument("--seed", type=int, default=42)
 
     explain_parser = subparsers.add_parser("explain")
