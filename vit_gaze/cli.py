@@ -32,6 +32,19 @@ def add_common_args(parser):
     parser.add_argument("--allow-missing-synthetic", action="store_true")
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument(
+        "--amp",
+        action="store_true",
+        help="Enable mixed-precision autocast (bf16 where supported, e.g. RTX 5090; "
+             "fp16 with loss scaling otherwise, e.g. RTX 2070 Super). Off by default "
+             "so results are bit-for-bit unchanged unless you opt in.",
+    )
+    parser.add_argument(
+        "--no-tf32",
+        action="store_true",
+        help="Disable TF32 matmul/conv. TF32 is on by default (a free speedup on "
+             "Ampere+/Blackwell, ignored on Turing) with negligible accuracy effect.",
+    )
+    parser.add_argument(
         "--eye-path",
         default=None,
         help="Root for preprocessed eye crops (multistream only). "
@@ -101,6 +114,12 @@ def build_parser():
     train_parser.add_argument("--num-workers", type=int, default=4)
     train_parser.add_argument("--lr", type=float, default=1e-4)
     train_parser.add_argument("--weight-decay", type=float, default=1e-4)
+    train_parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Wrap the model with torch.compile for extra throughput (falls back "
+             "to eager mode if the backend/GPU does not support it).",
+    )
     train_parser.add_argument("--folds", type=int, default=5)
     train_parser.add_argument(
         "--fold-index",
@@ -134,6 +153,14 @@ def build_parser():
     explain_parser.add_argument("--noise-std", type=float, default=0.03)
     explain_parser.add_argument("--occlusion-patch", type=int, default=24)
     explain_parser.add_argument("--occlusion-stride", type=int, default=12)
+    explain_parser.add_argument(
+        "--occlusion-batch",
+        type=int,
+        default=16,
+        help="Number of occluded variants evaluated per forward pass. Raise it on "
+             "a high-VRAM GPU (e.g. 64 on a 5090); lower it on an 8 GB card. Results "
+             "are identical regardless of this value.",
+    )
     explain_parser.add_argument("--threshold-percentile", type=float, default=85.0)
 
     return parser

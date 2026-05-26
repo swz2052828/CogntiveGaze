@@ -73,6 +73,36 @@ If ImageNet weights are not available in your environment, use:
 
 But expect worse gaze accuracy. Attribution is only meaningful after gaze prediction error is acceptably low.
 
+## Performance on different GPUs
+
+The same commands run on either machine and auto-detect the GPU. By default
+TF32 and the cuDNN autotuner are enabled (a free speedup on the 5090, ignored
+on the 2070 Super) and dataloader workers are kept warm with extra prefetch, so
+a fast GPU is not starved by image decoding. None of this changes results.
+
+For extra throughput, opt into mixed precision (off by default so numerics are
+unchanged unless requested):
+
+```bash
+# On the 5090: bf16 autocast is selected automatically.
+# On the 2070 Super: fp16 autocast with loss scaling, which also lets the
+# 8 GB card fit larger batches.
+python vit_gaze_segmenter.py train ... --amp
+```
+
+Other optional flags:
+
+- `--compile` wraps the model with `torch.compile` (falls back to eager mode if
+  unsupported).
+- `--no-tf32` disables TF32 if you want bit-exact fp32 matmuls.
+- `explain ... --occlusion-batch N` evaluates `N` occluded patches per forward
+  pass (raise it on the 5090, lower it on the 2070 Super). The heatmap is
+  identical regardless of `N`; this only removes per-patch launch overhead.
+
+The diffusion generator picks attention slicing automatically (`--attention-slicing auto`):
+on for low-VRAM GPUs like the 2070 Super, off on the 5090 where it would only
+slow generation down.
+
 ## 2. Explain Raw Image
 
 Occlusion is the recommended segmentation method because it directly measures how much gaze error increases when each image patch is hidden.

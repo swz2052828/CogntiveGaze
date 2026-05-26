@@ -4,6 +4,8 @@ from pathlib import Path
 import torch
 import torch.utils.data as data
 
+from vit_gaze import accel
+
 from .dataset import GazeSwapDataset
 from .losses import (
     FrozenGazeCriterion,
@@ -27,13 +29,16 @@ def make_loader(args):
         limit=args.limit,
         random_targets=args.random_targets,
     )
-    return data.DataLoader(
-        dataset,
+    loader_kwargs = dict(
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
+    if args.num_workers > 0:
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = 4
+    return data.DataLoader(dataset, **loader_kwargs)
 
 
 def save_checkpoint(args, generator, discriminator, optimizer_g, optimizer_d, epoch, path):
@@ -65,6 +70,7 @@ def save_sample_grid(source, target, fake, path):
 def train(args):
     start = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
+    accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
     if args.gaze_weight > 0 and not args.gaze_checkpoint:
         raise ValueError("--gaze-checkpoint is required when --gaze-weight > 0.")
 

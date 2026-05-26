@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as data
 
+from . import accel
 from .dataset import build_dataset, build_multistream_dataset
 from .models import (
     batch_images_for_mode,
@@ -15,7 +16,7 @@ from .models import (
 )
 from .splits import recording_kfolds, select_splits
 
-print_freq = 30
+print_freq = 100
 
 def normalize_gaze(gaze, mean, std):
     return (gaze - mean) / std
@@ -27,18 +28,25 @@ def denormalize_gaze(gaze, mean, std):
 
 def make_loader(dataset, indices, batch_size, shuffle, num_workers):
     subset = data.Subset(dataset, indices)
-    return data.DataLoader(
-        subset,
+    loader_kwargs = dict(
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
     )
+    if num_workers > 0:
+        # Keep workers and their prefetch buffers alive between epochs so a fast
+        # GPU is not starved waiting on PIL decode/resize. With 32 GB RAM the
+        # extra prefetch buffers are cheap.
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = 4
+    return data.DataLoader(subset, **loader_kwargs)
 
 
 def train(args):
     start_time = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
+    accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
     if args.input_mode == "multistream":
         dataset = build_multistream_dataset(args)
     else:
@@ -102,11 +110,17 @@ def train_one_fold(args, dataset, split, device):
         grid_size=getattr(args, "grid_size", 25),
         backbone=getattr(args, "backbone", "vit"),
     ).to(device)
+    if getattr(args, "compile", False):
+        model = _maybe_compile(model)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=args.lr,
         weight_decay=args.weight_decay,
     )
+
+    amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
+    scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
+    print(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
 
     train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
@@ -131,6 +145,9 @@ def train_one_fold(args, dataset, split, device):
             fold=fold,
             epoch=epoch,
             total_epochs=args.epochs,
+            scaler=scaler,
+            amp_enabled=amp_enabled,
+            amp_dtype=amp_dtype,
         )
         val_loss, val_error = evaluate(
             model=model,
@@ -139,6 +156,8 @@ def train_one_fold(args, dataset, split, device):
             gaze_std=gaze_std_device,
             device=device,
             input_mode=args.input_mode,
+            amp_enabled=amp_enabled,
+            amp_dtype=amp_dtype,
         )
         epoch_time = time.perf_counter() - epoch_start
         print(
@@ -150,7 +169,7 @@ def train_one_fold(args, dataset, split, device):
         )
 
         checkpoint = {
-            "model": model.state_dict(),
+            "model": _unwrap(model).state_dict(),
             "gaze_mean": gaze_mean,
             "gaze_std": gaze_std,
             "args": vars(args),
@@ -194,6 +213,9 @@ def train_epoch(
     fold,
     epoch,
     total_epochs,
+    scaler=None,
+    amp_enabled=False,
+    amp_dtype=None,
 ):
     model.train()
     total_loss = 0.0
@@ -201,13 +223,19 @@ def train_epoch(
     total_batches = len(loader)
     for batch_idx, batch in enumerate(loader, start=1):
         batch_start = time.perf_counter()
-        pred, batch_size = _predict(model, batch, input_mode, device)
-        target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
-        loss = F.smooth_l1_loss(pred, target)
-
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
+        with accel.autocast(device, amp_enabled, amp_dtype):
+            pred, batch_size = _predict(model, batch, input_mode, device)
+            target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
+            loss = F.smooth_l1_loss(pred, target)
+
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         total_loss += loss.item() * batch_size
         total_count += batch_size
@@ -225,13 +253,15 @@ def train_epoch(
 
 
 @torch.no_grad()
-def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode):
+def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode, amp_enabled=False, amp_dtype=None):
     model.eval()
     total_loss = 0.0
     total_error = 0.0
     total_count = 0
     for batch in loader:
-        pred_norm, batch_size = _predict(model, batch, input_mode, device)
+        with accel.autocast(device, amp_enabled, amp_dtype):
+            pred_norm, batch_size = _predict(model, batch, input_mode, device)
+        pred_norm = pred_norm.float()
         gaze = batch["gaze"].to(device)
         target = normalize_gaze(gaze, gaze_mean, gaze_std)
 
@@ -244,6 +274,29 @@ def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode):
         total_count += batch_size
 
     return total_loss / max(1, total_count), total_error / max(1, total_count)
+
+
+def _unwrap(model):
+    """Return the underlying module, unwrapping a torch.compile wrapper if present.
+
+    Keeps saved checkpoints loadable by the plain (uncompiled) model used at
+    inference time.
+    """
+    return getattr(model, "_orig_mod", model)
+
+
+def _maybe_compile(model):
+    compile_fn = getattr(torch, "compile", None)
+    if compile_fn is None:
+        print("torch.compile unavailable; running eagerly.")
+        return model
+    try:
+        # dynamic=True avoids guard recompiles on the ragged final batch and on
+        # the stacked (3*B) multistream encoder input.
+        return compile_fn(model, dynamic=True)
+    except Exception as exc:  # pragma: no cover - backend/hardware dependent
+        print(f"torch.compile failed ({exc}); running eagerly.")
+        return model
 
 
 def _predict(model, batch, input_mode, device):
