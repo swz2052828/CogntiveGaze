@@ -16,7 +16,7 @@ from .models import (
 )
 from .splits import recording_kfolds, select_splits
 
-print_freq = 30
+print_freq = 100
 
 def normalize_gaze(gaze, mean, std):
     return (gaze - mean) / std
