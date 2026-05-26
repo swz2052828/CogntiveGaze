@@ -108,6 +108,7 @@ def train_one_fold(args, dataset, split, device):
         freeze_encoder=args.freeze_encoder,
         use_grid=getattr(args, "use_grid", False),
         grid_size=getattr(args, "grid_size", 25),
+        backbone=getattr(args, "backbone", "vit"),
     ).to(device)
     if getattr(args, "compile", False):
         model = _maybe_compile(model)
@@ -319,6 +320,7 @@ def load_checkpoint(checkpoint_path, device):
         freeze_encoder=bool(saved_args.get("freeze_encoder", False)),
         use_grid=bool(saved_args.get("use_grid", False)),
         grid_size=int(saved_args.get("grid_size", 25)),
+        backbone=str(saved_args.get("backbone", "vit")),
     ).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
