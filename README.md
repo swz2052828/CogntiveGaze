@@ -1,5 +1,32 @@
 # CogntiveGaze
 
+Toolbox for gaze prediction and gaze-preserving face anonymisation.
+
+## What's in this repo
+
+| Package | Purpose | Docs |
+|---|---|---|
+| [`vit_gaze/`](vit_gaze) | ViT-based gaze regressor with K-fold cross validation, occlusion / SmoothGrad attribution, and a multistream mode that swaps between ViT, iTracker, MobileNetV3, AFFNet, and MGazeNet backbones. | [VIT_GAZE_SEGMENTATION.md](VIT_GAZE_SEGMENTATION.md) |
+| [`gaze_preserving_swap/`](gaze_preserving_swap) | Face-swap GAN trained with a frozen-gaze loss, plus a Stable Diffusion inpainting alternative. The original face-swap pipeline. | [gaze_preserving_swap/README.md](gaze_preserving_swap/README.md) |
+| [`gaze_locked_swap/`](gaze_locked_swap) | Inference-only face swap with landmark-tight eye preservation (MediaPipe), IP-Adapter identity reference, and a gaze-QC drift gate that uses a trained `vit_gaze` checkpoint. | [gaze_locked_swap/README.md](gaze_locked_swap/README.md) |
+| [`video_preprocess/`](video_preprocess) | Smartphone video → iTracker-format crops + `metadata.mat`, with three swappable methods each for face detection, eye detection, and blink detection plus a `--vis-dir` overlay for comparing strategies. | [video_preprocess/README.md](video_preprocess/README.md) |
+
+## Standalone scripts at the repo root
+
+- [`vit_gaze_segmenter.py`](vit_gaze_segmenter.py) — launcher for `python -m vit_gaze.cli`; used in every `vit_gaze` example.
+- [`generate_fake_faces_diffusion.py`](generate_fake_faces_diffusion.py) — original Stable Diffusion inpainting script for batch face swapping (predates `gaze_locked_swap`).
+
+## Suggested workflow
+
+1. **Prepare data.** If you have raw smartphone video, run `video_preprocess` to crop + label. If you already have iTracker-style crops, skip ahead.
+2. **Train a gaze model.** Use `vit_gaze` in `--input-mode multistream` with a chosen `--backbone`. K-fold by recording; the per-fold best checkpoint goes to `--out-path/fold{N}_best_vit_gaze_segmenter.pth`.
+3. **Generate gaze-preserving synthetic faces (optional).** Use `gaze_locked_swap` to anonymise frames while the gaze pixels stay byte-exact, with the QC gate flagging any frame whose predicted gaze drifted under your trained `vit_gaze` checkpoint.
+4. **Explain.** Use `vit_gaze explain` with occlusion or SmoothGrad to see which patches the gaze model used.
+
+---
+
+The rest of this file mirrors the per-package docs for quick reference; the source-of-truth for each package is its own README linked above.
+
 # ViT Gaze Segmentation
 
 This version avoids the previous raw+synthetic fusion by default.
