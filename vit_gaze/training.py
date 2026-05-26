@@ -290,7 +290,9 @@ def _maybe_compile(model):
         print("torch.compile unavailable; running eagerly.")
         return model
     try:
-        return compile_fn(model)
+        # dynamic=True avoids guard recompiles on the ragged final batch and on
+        # the stacked (3*B) multistream encoder input.
+        return compile_fn(model, dynamic=True)
     except Exception as exc:  # pragma: no cover - backend/hardware dependent
         print(f"torch.compile failed ({exc}); running eagerly.")
         return model
