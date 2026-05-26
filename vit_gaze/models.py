@@ -141,9 +141,18 @@ class MultiStreamViTGaze(nn.Module):
         )
 
     def forward(self, face, eye_left, eye_right, grid=None):
-        face_feat = self.encoder(face)
-        eye_l_feat = self.encoder(eye_left)
-        eye_r_feat = self.encoder(eye_right)
+        # Run the shared encoder once over the stacked streams instead of three
+        # sequential calls. ViT-B/16 has no cross-sample ops (attention is
+        # within one image; LayerNorm is per-sample; no BatchNorm) and no active
+        # dropout here, so this is bit-identical while far better utilizing the
+        # GPU. Falls back to per-stream calls if shapes ever differ.
+        if face.shape == eye_left.shape == eye_right.shape:
+            out = self.encoder(torch.cat([face, eye_left, eye_right], dim=0))
+            face_feat, eye_l_feat, eye_r_feat = out.chunk(3, dim=0)
+        else:
+            face_feat = self.encoder(face)
+            eye_l_feat = self.encoder(eye_left)
+            eye_r_feat = self.encoder(eye_right)
         feats = [face_feat, eye_l_feat, eye_r_feat]
         if self.use_grid:
             if grid is None:
