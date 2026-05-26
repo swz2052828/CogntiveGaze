@@ -332,7 +332,10 @@ def _maybe_compile(model):
     try:
         # dynamic=True avoids guard recompiles on the ragged final batch and on
         # the stacked (3*B) multistream encoder input.
-        return compile_fn(model, dynamic=True)
+        compiled = compile_fn(model, dynamic=True)
+        log("torch.compile enabled (dynamic=True); the first step compiles and "
+            "will be slower, then speeds up.")
+        return compiled
     except Exception as exc:  # pragma: no cover - backend/hardware dependent
         log(f"torch.compile failed ({exc}); running eagerly.")
         return model
