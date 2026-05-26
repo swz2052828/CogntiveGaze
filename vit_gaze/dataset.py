@@ -1,14 +1,39 @@
 from pathlib import Path
 
+import cv2
 import numpy as np
 import scipy.io as sio
 import torch
 import torch.utils.data as data
-from PIL import Image
+
+# OpenCV decode + bilinear resize is much faster than PIL + BICUBIC and matches
+# the CNN baseline's loader (ITrackerData). Force single-threaded so DataLoader
+# workers do not oversubscribe CPU cores. These run once at import and are
+# inherited by forked workers.
+cv2.setNumThreads(0)
+cv2.ocl.setUseOpenCL(False)
 
 
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
 IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+
+
+def _load_image_cv2(path, size):
+    """Decode -> resize (bilinear) -> CHW float tensor, ImageNet-normalized.
+
+    A missing/corrupt file falls back to a black frame instead of crashing,
+    matching the CNN baseline. With the init-time existence check removed, this
+    fallback is what guards against the occasional missing crop.
+    """
+    img = cv2.imread(str(path))
+    if img is None:
+        img = np.zeros((size, size, 3), dtype=np.uint8)
+    else:
+        if img.shape[0] != size or img.shape[1] != size:
+            img = cv2.resize(img, (size, size), interpolation=cv2.INTER_LINEAR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    tensor = torch.from_numpy(img).permute(2, 0, 1).float().div(255.0)
+    return (tensor - IMAGENET_MEAN) / IMAGENET_STD
 
 
 class PairedFaceGazeDataset(data.Dataset):
@@ -113,11 +138,7 @@ class PairedFaceGazeDataset(data.Dataset):
         return len(self.samples)
 
     def _load_image(self, path):
-        image = Image.open(path).convert("RGB")
-        image = image.resize((self.image_size, self.image_size), Image.BICUBIC)
-        arr = np.asarray(image).astype(np.float32) / 255.0
-        tensor = torch.from_numpy(arr).permute(2, 0, 1)
-        return (tensor - IMAGENET_MEAN) / IMAGENET_STD
+        return _load_image_cv2(path, self.image_size)
 
     def __getitem__(self, idx):
         raw_path, synthetic_path, gaze, rec, frame = self.samples[idx]
@@ -227,32 +248,26 @@ class MultiStreamGazeDataset(data.Dataset):
                 )
             face_grids_meta = np.asarray(metadata["labelFaceGrid"])
 
+        # Build sample paths for every metadata row. We intentionally do NOT
+        # stat each file here: the per-row triple os.stat() (face/eyeL/eyeR) is
+        # slow on networked HPC filesystems and dominated dataset startup.
+        # Missing/corrupt crops are handled at load time by the black-frame
+        # fallback in _load_image_cv2, matching the CNN baseline.
         self.samples = []
-        self.grid_params = []
-        missing = 0
-        for i, (rec, frame, gaze) in enumerate(zip(rec_nums, frame_indices, gazes)):
+        for rec, frame, gaze in zip(rec_nums, frame_indices, gazes):
             face_p = self.data_path / f"{rec:05d}" / face_folder / f"{frame:05d}.jpg"
             left_p = self.eye_path / f"{rec:05d}" / left_eye_folder / f"{frame:05d}.jpg"
             right_p = self.eye_path / f"{rec:05d}" / right_eye_folder / f"{frame:05d}.jpg"
-            if not (face_p.is_file() and left_p.is_file() and right_p.is_file()):
-                missing += 1
-                continue
             self.samples.append((face_p, left_p, right_p, gaze, int(rec), int(frame)))
-            if use_grid:
-                self.grid_params.append(face_grids_meta[i])
+        self.grid_params = list(face_grids_meta) if use_grid else []
 
         if not self.samples:
             raise RuntimeError(
-                "No multi-stream samples found. Check --data-path / --eye-path "
-                "and folder names."
+                "No rows in metadata.mat. Check --data-path / --metadata-path."
             )
-        if missing:
-            print(f"Skipped {missing} rows missing at least one of face/eyeL/eyeR.")
 
-        self.gazes = np.stack([sample[3] for sample in self.samples]).astype(np.float32)
-        self.recordings = np.asarray(
-            [sample[4] for sample in self.samples], dtype=np.int32
-        )
+        self.gazes = gazes.astype(np.float32)
+        self.recordings = rec_nums.astype(np.int32)
 
         self._grid_xs = np.arange(self.grid_len) % grid_size
         self._grid_ys = np.arange(self.grid_len) // grid_size
@@ -272,12 +287,7 @@ class MultiStreamGazeDataset(data.Dataset):
         )[0].tolist()
 
     def _load_image(self, path, size):
-        image = Image.open(path).convert("RGB")
-        if image.size != (size, size):
-            image = image.resize((size, size), Image.BICUBIC)
-        arr = np.asarray(image, dtype=np.float32) / 255.0
-        tensor = torch.from_numpy(arr).permute(2, 0, 1)
-        return (tensor - IMAGENET_MEAN) / IMAGENET_STD
+        return _load_image_cv2(path, size)
 
     def _make_grid(self, params):
         grid = torch.zeros(self.grid_len, dtype=torch.float32)
