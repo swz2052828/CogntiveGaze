@@ -175,3 +175,118 @@ mask highlights background, crop border, compression artifacts, or synthetic tex
 ```
 
 If gaze prediction error is high, do not trust the segmentation yet.
+
+## 4. Switching Input Modes
+
+`vit_gaze_segmenter.py train` accepts four `--input-mode` choices. Pick based on what your dataset looks like.
+
+| `--input-mode` | What the model sees per frame | Dataset layout |
+|---|---|---|
+| `raw` (default) | Single face image | `<data_path>/<rec>/<raw-folder>/<frame>.jpg` |
+| `synthetic` | Single synthetic image (gaze-preserving swap output) | `<data_path>/<rec>/<synthetic-folder>/<frame>.jpg` |
+| `paired` | Raw + synthetic fused four ways (legacy) | both folders, aligned by frame |
+| `multistream` | Face + left eye + right eye crops (+ optional face-grid) | iTracker layout — see below |
+
+The first three are single-stream (one image -> 2D gaze). The fourth one mirrors the input format of the project's CNN baselines (MGazeNet / AFFNet / MobileNetV3) and is required if you want to swap to those backbones.
+
+### `multistream` data layout
+
+```text
+<data_path>/<rec:05d>/appleFace/<frame:05d>.jpg
+<eye_path >/<rec:05d>/appleLeftEye/<frame:05d>.jpg
+<eye_path >/<rec:05d>/appleRightEye/<frame:05d>.jpg
+<data_path>/<mean_path>/metadata.mat   # labelRecNum, frameIndex, labelDotXCam,
+                                       # labelDotYCam, labelFaceGrid
+```
+
+`--eye-path` defaults to `--data-path` when the eye crops live in the same root as the face crops. The face-grid is read from `labelFaceGrid` in `metadata.mat` and only loaded when `--use-grid` is passed.
+
+If you start from raw smartphone video, the `video_preprocess` package writes exactly this layout — see [`video_preprocess/README.md`](video_preprocess/README.md).
+
+### Minimal multistream training command
+
+```bash
+python vit_gaze_segmenter.py train \
+  --data-path ./datasets/ProcessedData \
+  --eye-path  ./datasets/ProcessedData \
+  --mean-path mean7 \
+  --input-mode multistream \
+  --weights imagenet \
+  --epochs 30 \
+  --batch-size 16 \
+  --folds 5 \
+  --out-path ./vit_gaze_multistream_output
+```
+
+This trains the default ViT backbone with no face-grid. The grid is **off by default** because for seated, static-head desktop setups the face-grid is near-constant per subject and provides no within-subject signal (and across subjects acts as an identity leak under recording-level K-fold).
+
+Add `--use-grid` to enable it. This is required when switching to any of the CNN backbones — see below.
+
+## 5. Switching Multistream Backbones
+
+In `--input-mode multistream` you can choose the model architecture with `--backbone`. Five options, all wired through the same training / K-fold / normalisation pipeline so comparisons are apples-to-apples.
+
+| `--backbone` | Source | Params | `--use-grid` |
+|---|---|---|---|
+| `vit` (default) | Shared ViT-B/16 encoder across face + both eyes; optional 625 → 256 → 128 grid MLP | 87M | optional |
+| `itracker` | Original GazeCapture iTracker CNN (AlexNet-ish), eye weights shared, grid concat at head | 6.3M | **required** |
+| `mobilenet_v3` | MobileNetV3-Large feature extractors with iTracker-style fusion head | 6.4M | **required** |
+| `affnet` | Adaptive Group Norm; eye stream conditioned on `(face, grid)` factor at every block | 3.0M | **required** (used in AGN) |
+| `mgazenet` | LABN + SE blocks; same factor-conditioned eye streams as AFFNet | 3.0M | **required** (used in LABN) |
+
+The four CNN backbones use the face-grid as a conditioning factor (AFFNet / MGazeNet via AGN / LABN) or concatenate it into the head (iTracker / MobileNetV3). They will refuse to construct without `--use-grid` and tell you why.
+
+### Compare all five backbones on the same dataset
+
+```bash
+for bb in vit itracker mobilenet_v3 affnet mgazenet; do
+  python vit_gaze_segmenter.py train \
+    --data-path ./datasets/ProcessedData \
+    --eye-path  ./datasets/ProcessedData \
+    --mean-path mean7 \
+    --input-mode multistream \
+    --backbone $bb \
+    --use-grid \
+    --weights imagenet \
+    --epochs 30 --folds 5 \
+    --out-path ./runs/$bb
+done
+```
+
+(`--use-grid` is harmless for `vit` and required for the other four, so leaving it on for the loop is fine.)
+
+After the runs finish, each `./runs/<backbone>/` holds `fold{0..4}_best_vit_gaze_segmenter.pth` plus a per-fold log. Compare `val_coord_error` across backbones — both per-fold and the `CV summary` line at the end of each log.
+
+### Slurm array per backbone
+
+```bash
+sbatch --array=0-4 --job-name=$bb scripts/train_vit_multistream.sbatch \
+  --input-mode multistream --backbone $bb --use-grid \
+  --data-path ./datasets/ProcessedData \
+  --eye-path  ./datasets/ProcessedData \
+  --out-path ./runs/$bb
+```
+
+One job per fold per backbone. Five jobs per backbone, fifteen total for the five-backbone sweep with all folds.
+
+### Quick reference: which backbone to pick
+
+- **`vit`** — default. Use when you want attention-based attribution maps (works with `vit_gaze.explain`) and the dataset is large enough that 87M params won't overfit.
+- **`mobilenet_v3`** — fast, modern, ImageNet-pretrained CNN. Good default when ViT is too heavy.
+- **`itracker`** — comparison baseline matching the original GazeCapture paper.
+- **`affnet` / `mgazenet`** — small parameter budget, eye streams adaptively conditioned on (face, grid). Strong on small datasets where overfitting is the main concern.
+
+### Loading a checkpoint with a specific backbone
+
+`load_checkpoint` reads the backbone from the saved `args` dict, so once you've trained a model you can re-instantiate it without passing `--backbone` again:
+
+```python
+from vit_gaze.training import load_checkpoint
+import torch
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model, gaze_mean, gaze_std, ckpt, input_mode = load_checkpoint(
+    "./runs/affnet/fold0_best_vit_gaze_segmenter.pth", device
+)
+```
+
+The model class is reconstructed via `create_model(input_mode, backbone=..., use_grid=..., grid_size=...)` from the values stored in the checkpoint's `args`.
