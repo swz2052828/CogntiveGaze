@@ -225,7 +225,7 @@ def train_one_fold(args, dataset, split, device):
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_val_error = val_error
-            torch.save(checkpoint, out_path / f"fold{fold}_best_vit_gaze_segmenter.pth")
+            torch.save(checkpoint, out_path / f"fold{fold}_best_{backbone}_gaze_segmenter.pth")
 
     fold_time = time.perf_counter() - fold_start
     log(
