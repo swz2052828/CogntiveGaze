@@ -114,7 +114,9 @@ python vit_gaze_segmenter.py train ... --amp
   transformers, at the cost of a one-time graph compile (a few minutes) at
   startup; falls back to eager mode if the backend/GPU does not support it.
   Worth it for multi-epoch runs; gains are smaller and less predictable on
-  Turing.
+  Turing. On HPC the Triton/Inductor compile cache is redirected to `$TMPDIR`
+  (node-local scratch) to avoid blowing the `$HOME` quota; override with
+  `TRITON_CACHE_DIR` / `TORCHINDUCTOR_CACHE_DIR` if you want a persistent cache.
 - **`--no-tf32`** — disables TF32 if you want bit-exact fp32 matmuls (slower).
   No effect on the 2070 Super, which has no TF32 path.
 - **`--num-workers N`** — dataloader processes. Match it to the CPUs you

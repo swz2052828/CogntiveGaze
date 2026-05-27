@@ -1,3 +1,5 @@
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -329,12 +331,35 @@ def _maybe_compile(model):
     if compile_fn is None:
         log("torch.compile unavailable; running eagerly.")
         return model
+
+    # On clustered filesystems the default Triton/Inductor caches land in
+    # $HOME/.triton and $HOME/.cache, which routinely blows the home quota and
+    # crashes the first compiled step (OSError: Disk quota exceeded). Point them
+    # at node-local scratch ($TMPDIR) unless the user has already chosen a dir.
+    cache_base = os.environ.get("TMPDIR") or tempfile.gettempdir()
+    os.environ.setdefault("TRITON_CACHE_DIR", os.path.join(cache_base, "triton_cache"))
+    os.environ.setdefault(
+        "TORCHINDUCTOR_CACHE_DIR", os.path.join(cache_base, "torchinductor_cache")
+    )
+    # Best effort: a runtime compile failure (e.g. unsupported op, cache I/O)
+    # should degrade to eager rather than kill a multi-hour job, matching the
+    # documented behaviour of --compile.
+    try:
+        import torch._dynamo
+
+        torch._dynamo.config.suppress_errors = True
+    except Exception:
+        pass
+
     try:
         # dynamic=True avoids guard recompiles on the ragged final batch and on
         # the stacked (3*B) multistream encoder input.
         compiled = compile_fn(model, dynamic=True)
-        log("torch.compile enabled (dynamic=True); the first step compiles and "
-            "will be slower, then speeds up.")
+        log(
+            f"torch.compile enabled (dynamic=True); Triton cache at "
+            f"{os.environ['TRITON_CACHE_DIR']}. The first step compiles and "
+            f"will be slower, then speeds up."
+        )
         return compiled
     except Exception as exc:  # pragma: no cover - backend/hardware dependent
         log(f"torch.compile failed ({exc}); running eagerly.")
