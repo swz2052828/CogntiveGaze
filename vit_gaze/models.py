@@ -82,6 +82,13 @@ class SingleFaceViTGaze(nn.Module):
         return self.head(self.encoder(image))
 
 
+# MultiStreamViTGaze moved into multistream_backbones/vit_shared.py; re-exported
+# here so existing imports (e.g. from vit_gaze.models import MultiStreamViTGaze)
+# continue to work.
+from .multistream_backbones import (  # noqa: E402,F401
+    MultiStreamViTGaze,
+    build_multistream_backbone,
+)
 class MultiStreamViTGaze(nn.Module):
     """Shared ViT-B/16 encoder over face + left eye + right eye, optional grid.
 
@@ -167,11 +174,13 @@ def create_model(
     freeze_encoder=False,
     use_grid=False,
     grid_size=25,
+    backbone="vit",
 ):
     if input_mode == "paired":
         return PairedFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
     if input_mode == "multistream":
-        return MultiStreamViTGaze(
+        return build_multistream_backbone(
+            backbone=backbone,
             weights=weights,
             freeze_encoder=freeze_encoder,
             use_grid=use_grid,

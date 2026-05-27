@@ -18,7 +18,7 @@ from .models import (
 )
 from .splits import recording_kfolds, select_splits
 
-print_freq = 30
+print_freq = 100
 
 
 class _Logger:
@@ -150,6 +150,7 @@ def train_one_fold(args, dataset, split, device):
         freeze_encoder=args.freeze_encoder,
         use_grid=getattr(args, "use_grid", False),
         grid_size=getattr(args, "grid_size", 25),
+        backbone=getattr(args, "backbone", "vit"),
     ).to(device)
     if getattr(args, "compile", False):
         model = _maybe_compile(model)
@@ -226,7 +227,7 @@ def train_one_fold(args, dataset, split, device):
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_val_error = val_error
-            torch.save(checkpoint, out_path / f"fold{fold}_best_vit_gaze_segmenter.pth")
+            torch.save(checkpoint, out_path / f"fold{fold}_best_{backbone}_gaze_segmenter.pth")
 
     fold_time = time.perf_counter() - fold_start
     log(
@@ -387,6 +388,7 @@ def load_checkpoint(checkpoint_path, device):
         freeze_encoder=bool(saved_args.get("freeze_encoder", False)),
         use_grid=bool(saved_args.get("use_grid", False)),
         grid_size=int(saved_args.get("grid_size", 25)),
+        backbone=str(saved_args.get("backbone", "vit")),
     ).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
