@@ -346,9 +346,9 @@ def _maybe_compile(model):
     # should degrade to eager rather than kill a multi-hour job, matching the
     # documented behaviour of --compile.
     try:
-        import torch._dynamo
+        from torch import _dynamo
 
-        torch._dynamo.config.suppress_errors = True
+        _dynamo.config.suppress_errors = True
     except Exception:
         pass
 
