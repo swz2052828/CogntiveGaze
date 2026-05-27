@@ -39,12 +39,20 @@ def configure_backends(enable_tf32=True):
 
 
 def amp_dtype_for_device(device):
-    """Widest fast autocast dtype the device supports: bf16 if available else fp16."""
+    """Native fast autocast dtype: bf16 on Ampere+ (sm_80+), else fp16.
+
+    bf16 is gated on compute capability >= 8.0, NOT on
+    ``torch.cuda.is_bf16_supported()``: that returns True on Turing (e.g. the
+    2070 Super, sm_75) via slow *emulated* bf16, which is not real tensor-core
+    bf16 and which torch.compile cannot lower ("does not support bfloat16
+    compilation natively, skipping"). Turing has fast native fp16, so prefer it.
+    """
     dev = _as_device(device)
     if dev.type != "cuda":
         return None
     try:
-        if torch.cuda.is_bf16_supported():
+        major, _ = torch.cuda.get_device_capability(dev)
+        if major >= 8 and torch.cuda.is_bf16_supported():
             return torch.bfloat16
     except Exception:
         pass
