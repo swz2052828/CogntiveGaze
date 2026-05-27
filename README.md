@@ -100,6 +100,82 @@ If ImageNet weights are not available in your environment, use:
 
 But expect worse gaze accuracy. Attribution is only meaningful after gaze prediction error is acceptably low.
 
+## Performance and tuning
+
+The same commands run on either machine and auto-detect the GPU at runtime, so
+you do not change code per card.
+
+### On automatically (no flags, no change to results)
+
+- **TF32 matmul/conv + cuDNN autotuner** — a free speedup on Ampere+/Blackwell
+  (the 5090), silently ignored on Turing (the 2070 Super).
+- **Warm, prefetching dataloaders** — workers and prefetch buffers are kept
+  alive between epochs so a fast GPU is not starved by image decode/resize.
+- **Single-pass shared encoder (multistream)** — the shared ViT-B/16 runs once
+  over face + left eye + right eye stacked on the batch dim instead of three
+  sequential calls. This is bit-identical (ViT has no cross-sample ops and no
+  active dropout in the encoder) and is the main fix for low GPU utilization at
+  small batch sizes.
+
+### Recommended settings per GPU
+
+These are the fast, accuracy-safe combinations:
+
+```bash
+# RTX 5090 (Blackwell, 32 GB): bf16 autocast + compile.
+python vit_gaze_segmenter.py train ... --amp --compile
+
+# RTX 2070 Super (Turing, 8 GB): fp16 autocast (also halves activation memory,
+# which is what lets the 8 GB card fit a usable batch). Keep the batch small.
+python vit_gaze_segmenter.py train ... --amp
+```
+
+### Tuning flags (what each does, and the trade-off)
+
+- **`--amp`** — mixed precision; **off by default** so numerics are bit-for-bit
+  unchanged unless you ask. On the 5090 it picks **bf16** (no loss scaling
+  needed, accuracy-safe). On the 2070 Super it picks **fp16 + gradient loss
+  scaling**. This is the single biggest reliable win — rarely a reason to skip.
+- **`--compile`** — wraps the model with `torch.compile` (`dynamic=True`, so the
+  ragged final batch does not trigger recompiles). Real extra throughput on
+  transformers, at the cost of a one-time graph compile (a few minutes) at
+  startup; falls back to eager mode if the backend/GPU does not support it.
+  Worth it for multi-epoch runs; gains are smaller and less predictable on
+  Turing. On HPC the Triton/Inductor compile cache is redirected to `$TMPDIR`
+  (node-local scratch) to avoid blowing the `$HOME` quota; override with
+  `TRITON_CACHE_DIR` / `TORCHINDUCTOR_CACHE_DIR` if you want a persistent cache.
+- **`--no-tf32`** — disables TF32 if you want bit-exact fp32 matmuls (slower).
+  No effect on the 2070 Super, which has no TF32 path.
+- **`--num-workers N`** — dataloader processes. Match it to the CPUs you
+  allocate (e.g. `--num-workers 8` with `--cpus-per-task=12`).
+- **`--batch-size N`** — the one lever that is **not** accuracy-neutral. A larger
+  batch improves 5090 utilization but changes the optimization dynamics
+  (effective learning rate / gradient-noise scale), so validation numbers can
+  shift. Treat a batch-size change as a training change, not a free speedup, and
+  do not compare it head-to-head with a different-batch baseline.
+- **`explain ... --occlusion-batch N`** — number of occluded patches evaluated
+  per forward pass (raise on the 5090, lower on the 2070 Super). The heatmap is
+  identical regardless of `N`; this only removes per-patch launch overhead.
+
+The diffusion generator picks attention slicing automatically
+(`--attention-slicing auto`): on for low-VRAM GPUs like the 2070 Super, off on
+the 5090 where it would only slow generation down.
+
+### Writing the log to a file
+
+By default the per-batch / per-epoch / accel log lines go to stdout. Pass
+`--log-file PATH` to **also** append every line to a timestamped, line-buffered
+file you can follow live (`tail -f PATH`) and read after the run. Stdout is left
+unchanged, so this is useful on Slurm where stdout is often buffered or split
+across array-task `.out` files:
+
+```bash
+# one self-contained, tailable log per fold of an array job
+python vit_gaze_segmenter.py train ... \
+  --fold-index $SLURM_ARRAY_TASK_ID \
+  --log-file train_fold${SLURM_ARRAY_TASK_ID}.log
+```
+
 ## 2. Explain Raw Image
 
 Occlusion is the recommended segmentation method because it directly measures how much gaze error increases when each image patch is hidden.

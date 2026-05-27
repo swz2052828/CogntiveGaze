@@ -1,3 +1,5 @@
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -5,11 +7,50 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as data
 
-from .dataset import build_dataset
-from .models import batch_images_for_mode, create_model, forward_for_mode
+from . import accel
+from .dataset import build_dataset, build_multistream_dataset
+from .models import (
+    batch_images_for_mode,
+    batch_multistream_for_mode,
+    create_model,
+    forward_for_mode,
+    forward_multistream,
+)
 from .splits import recording_kfolds, select_splits
 
-print_freq = 30
+print_freq = 100
+
+
+class _Logger:
+    """Routes every training/optimization log line to stdout and, when
+    ``--log-file`` is set, also appends a timestamped copy to that file.
+
+    The file is line-buffered so it can be followed live with ``tail -f`` and
+    survives a crash. Stdout output is left exactly as before, so Slurm parsing
+    and live monitoring keep working.
+    """
+
+    def __init__(self):
+        self._fh = None
+
+    def open(self, path):
+        if path:
+            self._fh = open(path, "a", buffering=1)
+            self._fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] === training log started ===\n")
+
+    def __call__(self, msg=""):
+        print(msg)
+        if self._fh is not None:
+            self._fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+
+    def close(self):
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
+
+
+log = _Logger()
+
 
 def normalize_gaze(gaze, mean, std):
     return (gaze - mean) / std
@@ -21,29 +62,51 @@ def denormalize_gaze(gaze, mean, std):
 
 def make_loader(dataset, indices, batch_size, shuffle, num_workers):
     subset = data.Subset(dataset, indices)
-    return data.DataLoader(
-        subset,
+    loader_kwargs = dict(
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
     )
+    if num_workers > 0:
+        # Keep workers and their prefetch buffers alive between epochs so a fast
+        # GPU is not starved waiting on PIL decode/resize. With 32 GB RAM the
+        # extra prefetch buffers are cheap.
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = 4
+    return data.DataLoader(subset, **loader_kwargs)
 
 
 def train(args):
+    log.open(getattr(args, "log_file", None))
+    try:
+        _run_training(args)
+    finally:
+        log.close()
+
+
+def _run_training(args):
     start_time = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
-    use_synthetic = args.input_mode in ("synthetic", "paired")
-    require_synthetic = args.input_mode in ("synthetic", "paired") and not args.allow_missing_synthetic
-    dataset = build_dataset(args, use_synthetic=use_synthetic, require_synthetic=require_synthetic)
+    accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
+    if args.input_mode == "multistream":
+        dataset = build_multistream_dataset(args)
+    else:
+        use_synthetic = args.input_mode in ("synthetic", "paired")
+        require_synthetic = (
+            args.input_mode in ("synthetic", "paired") and not args.allow_missing_synthetic
+        )
+        dataset = build_dataset(
+            args, use_synthetic=use_synthetic, require_synthetic=require_synthetic
+        )
 
     all_splits = recording_kfolds(dataset.unique_recordings(), folds=args.folds, seed=args.seed)
     splits = select_splits(all_splits, args.fold_index)
 
-    print(f"Device: {device}")
-    print(f"Cross validation: {args.folds} folds by recording id")
+    log(f"Device: {device}")
+    log(f"Cross validation: {args.folds} folds by recording id")
     if args.fold_index is not None:
-        print(f"Running only fold {args.fold_index}")
+        log(f"Running only fold {args.fold_index}")
 
     summaries = []
     for split in splits:
@@ -54,7 +117,7 @@ def train(args):
     if summaries:
         mean_val_loss = sum(item["best_val_loss"] for item in summaries) / len(summaries)
         mean_val_error = sum(item["best_val_error"] for item in summaries) / len(summaries)
-        print(
+        log(
             f"CV summary folds={len(summaries)} "
             f"mean_best_val_loss={mean_val_loss:.6f} "
             f"mean_best_val_coord_error={mean_val_error:.6f} "
@@ -70,7 +133,7 @@ def train_one_fold(args, dataset, split, device):
     if not train_indices or not val_indices:
         raise RuntimeError(f"Fold {fold} has empty train or validation indices.")
 
-    print(
+    log(
         f"Fold {fold} start "
         f"train_recordings={split['train_recordings']} "
         f"val_recordings={split['val_recordings']} "
@@ -81,12 +144,25 @@ def train_one_fold(args, dataset, split, device):
     gaze_mean = torch.from_numpy(dataset.gazes[train_indices].mean(axis=0)).float()
     gaze_std = torch.from_numpy(dataset.gazes[train_indices].std(axis=0)).float().clamp_min(1e-6)
 
-    model = create_model(args.input_mode, weights=args.weights, freeze_encoder=args.freeze_encoder).to(device)
+    model = create_model(
+        args.input_mode,
+        weights=args.weights,
+        freeze_encoder=args.freeze_encoder,
+        use_grid=getattr(args, "use_grid", False),
+        grid_size=getattr(args, "grid_size", 25),
+        backbone=getattr(args, "backbone", "vit"),
+    ).to(device)
+    if getattr(args, "compile", False):
+        model = _maybe_compile(model)
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=args.lr,
         weight_decay=args.weight_decay,
     )
+
+    amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
+    scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
+    log(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
 
     train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
@@ -111,6 +187,9 @@ def train_one_fold(args, dataset, split, device):
             fold=fold,
             epoch=epoch,
             total_epochs=args.epochs,
+            scaler=scaler,
+            amp_enabled=amp_enabled,
+            amp_dtype=amp_dtype,
         )
         val_loss, val_error = evaluate(
             model=model,
@@ -119,9 +198,11 @@ def train_one_fold(args, dataset, split, device):
             gaze_std=gaze_std_device,
             device=device,
             input_mode=args.input_mode,
+            amp_enabled=amp_enabled,
+            amp_dtype=amp_dtype,
         )
         epoch_time = time.perf_counter() - epoch_start
-        print(
+        log(
             f"Fold {fold} epoch {epoch + 1}/{args.epochs} validation "
             f"val_loss={val_loss:.6f} "
             f"val_coord_error={val_error:.6f} "
@@ -130,7 +211,7 @@ def train_one_fold(args, dataset, split, device):
         )
 
         checkpoint = {
-            "model": model.state_dict(),
+            "model": _unwrap(model).state_dict(),
             "gaze_mean": gaze_mean,
             "gaze_std": gaze_std,
             "args": vars(args),
@@ -142,14 +223,14 @@ def train_one_fold(args, dataset, split, device):
             "val_loss": val_loss,
             "val_error": val_error,
         }
-        torch.save(checkpoint, out_path / f"fold{fold}_last_vit_gaze_segmenter.pth")
+        torch.save(checkpoint, out_path / f"fold{fold}_last_{args.backbone}_gaze_segmenter.pth")
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_val_error = val_error
-            torch.save(checkpoint, out_path / f"fold{fold}_best_vit_gaze_segmenter.pth")
+            torch.save(checkpoint, out_path / f"fold{fold}_best_{args.backbone}_gaze_segmenter.pth")
 
     fold_time = time.perf_counter() - fold_start
-    print(
+    log(
         f"Fold {fold} done "
         f"best_val_loss={best_val_loss:.6f} "
         f"best_val_coord_error={best_val_error:.6f} "
@@ -174,6 +255,9 @@ def train_epoch(
     fold,
     epoch,
     total_epochs,
+    scaler=None,
+    amp_enabled=False,
+    amp_dtype=None,
 ):
     model.train()
     total_loss = 0.0
@@ -181,23 +265,26 @@ def train_epoch(
     total_batches = len(loader)
     for batch_idx, batch in enumerate(loader, start=1):
         batch_start = time.perf_counter()
-        first, second = batch_images_for_mode(batch, input_mode, device)
-        target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
-
-        pred = forward_for_mode(model, input_mode, first, second)
-        loss = F.smooth_l1_loss(pred, target)
-
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
+        with accel.autocast(device, amp_enabled, amp_dtype):
+            pred, batch_size = _predict(model, batch, input_mode, device)
+            target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
+            loss = F.smooth_l1_loss(pred, target)
 
-        batch_size = first.size(0)
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
+
         total_loss += loss.item() * batch_size
         total_count += batch_size
         running_loss = total_loss / max(1, total_count)
         batch_time = time.perf_counter() - batch_start
         if (batch_idx % print_freq) == 0:
-            print(
+            log(
                 f"Fold {fold} epoch {epoch + 1}/{total_epochs} "
                 f"batch {batch_idx}/{total_batches} "
                 f"batch_loss={loss.item():.6f} "
@@ -208,27 +295,87 @@ def train_epoch(
 
 
 @torch.no_grad()
-def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode):
+def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode, amp_enabled=False, amp_dtype=None):
     model.eval()
     total_loss = 0.0
     total_error = 0.0
     total_count = 0
     for batch in loader:
-        first, second = batch_images_for_mode(batch, input_mode, device)
+        with accel.autocast(device, amp_enabled, amp_dtype):
+            pred_norm, batch_size = _predict(model, batch, input_mode, device)
+        pred_norm = pred_norm.float()
         gaze = batch["gaze"].to(device)
         target = normalize_gaze(gaze, gaze_mean, gaze_std)
 
-        pred_norm = forward_for_mode(model, input_mode, first, second)
         pred = denormalize_gaze(pred_norm, gaze_mean, gaze_std)
         loss = F.smooth_l1_loss(pred_norm, target, reduction="sum")
         error = torch.linalg.norm(pred - gaze, dim=1).sum()
 
-        batch_size = first.size(0)
         total_loss += loss.item()
         total_error += error.item()
         total_count += batch_size
 
     return total_loss / max(1, total_count), total_error / max(1, total_count)
+
+
+def _unwrap(model):
+    """Return the underlying module, unwrapping a torch.compile wrapper if present.
+
+    Keeps saved checkpoints loadable by the plain (uncompiled) model used at
+    inference time.
+    """
+    return getattr(model, "_orig_mod", model)
+
+
+def _maybe_compile(model):
+    compile_fn = getattr(torch, "compile", None)
+    if compile_fn is None:
+        log("torch.compile unavailable; running eagerly.")
+        return model
+
+    # On clustered filesystems the default Triton/Inductor caches land in
+    # $HOME/.triton and $HOME/.cache, which routinely blows the home quota and
+    # crashes the first compiled step (OSError: Disk quota exceeded). Point them
+    # at node-local scratch ($TMPDIR) unless the user has already chosen a dir.
+    cache_base = os.environ.get("TMPDIR") or tempfile.gettempdir()
+    os.environ.setdefault("TRITON_CACHE_DIR", os.path.join(cache_base, "triton_cache"))
+    os.environ.setdefault(
+        "TORCHINDUCTOR_CACHE_DIR", os.path.join(cache_base, "torchinductor_cache")
+    )
+    # Best effort: a runtime compile failure (e.g. unsupported op, cache I/O)
+    # should degrade to eager rather than kill a multi-hour job, matching the
+    # documented behaviour of --compile.
+    try:
+        from torch import _dynamo
+
+        _dynamo.config.suppress_errors = True
+    except Exception:
+        pass
+
+    try:
+        # dynamic=True avoids guard recompiles on the ragged final batch and on
+        # the stacked (3*B) multistream encoder input.
+        compiled = compile_fn(model, dynamic=True)
+        log(
+            f"torch.compile enabled (dynamic=True); Triton cache at "
+            f"{os.environ['TRITON_CACHE_DIR']}. The first step compiles and "
+            f"will be slower, then speeds up."
+        )
+        return compiled
+    except Exception as exc:  # pragma: no cover - backend/hardware dependent
+        log(f"torch.compile failed ({exc}); running eagerly.")
+        return model
+
+
+def _predict(model, batch, input_mode, device):
+    """Dispatch a batch through the right forward path; return (pred, batch_size)."""
+    if input_mode == "multistream":
+        inputs = batch_multistream_for_mode(batch, device)
+        pred = forward_multistream(model, inputs)
+        return pred, inputs["face"].size(0)
+    first, second = batch_images_for_mode(batch, input_mode, device)
+    pred = forward_for_mode(model, input_mode, first, second)
+    return pred, first.size(0)
 
 
 def load_checkpoint(checkpoint_path, device):
@@ -239,6 +386,9 @@ def load_checkpoint(checkpoint_path, device):
         input_mode=input_mode,
         weights="none",
         freeze_encoder=bool(saved_args.get("freeze_encoder", False)),
+        use_grid=bool(saved_args.get("use_grid", False)),
+        grid_size=int(saved_args.get("grid_size", 25)),
+        backbone=str(saved_args.get("backbone", "vit")),
     ).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()

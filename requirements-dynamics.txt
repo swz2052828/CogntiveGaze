@@ -1,0 +1,11 @@
+# Dependencies for the gaze_dynamics analysis package (separate from training).
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+opencv-python
+scikit-image
+pingouin
+fastdtw
+tqdm

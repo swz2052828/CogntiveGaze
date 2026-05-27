@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from . import accel
 from .attribution import (
     make_mask,
     occlusion_single_saliency,
@@ -36,6 +37,9 @@ def save_image(path, image):
 def explain(args):
     start_time = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
+    accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
+    amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
+    print(f"Explain accel {accel.describe(device, amp_enabled, amp_dtype)}")
     model, gaze_mean, gaze_std, checkpoint, input_mode = load_checkpoint(args.checkpoint, device)
     use_synthetic = input_mode == "paired" or args.explain_source in ("synthetic", "both")
     require_synthetic = use_synthetic and not args.allow_missing_synthetic
@@ -74,7 +78,7 @@ def explain(args):
             source_heatmaps["synthetic"] = synthetic_sal.cpu().numpy()
             sample_predictions["paired"] = pred.tolist()
         else:
-            explain_single_image_sources(args, model, sample, target_norm, gaze_mean, gaze_std, device, source_heatmaps, sample_outputs, sample_predictions, base, out_dir)
+            explain_single_image_sources(args, model, sample, target_norm, gaze_mean, gaze_std, device, source_heatmaps, sample_outputs, sample_predictions, base, out_dir, amp_enabled, amp_dtype)
 
         if input_mode == "paired":
             save_paired_outputs(args, sample, source_heatmaps, sample_outputs, base, out_dir)
@@ -113,11 +117,15 @@ def explain(args):
     print(f"Explain done samples={len(sample_indices)} total_time_sec={time.perf_counter() - start_time:.2f}")
 
 
-def explain_single_image_sources(args, model, sample, target_norm, gaze_mean, gaze_std, device, source_heatmaps, sample_outputs, sample_predictions, base, out_dir):
+def explain_single_image_sources(args, model, sample, target_norm, gaze_mean, gaze_std, device, source_heatmaps, sample_outputs, sample_predictions, base, out_dir, amp_enabled=False, amp_dtype=None):
+    def amp_autocast():
+        return accel.autocast(device, amp_enabled, amp_dtype)
+
     for source in choose_sources(args.explain_source):
         image = source_tensor(sample, source, device)
-        pred_norm = model(image)
-        pred = denormalize_gaze(pred_norm, gaze_mean, gaze_std).detach().cpu().numpy()[0]
+        with torch.no_grad(), amp_autocast():
+            pred_norm = model(image)
+        pred = denormalize_gaze(pred_norm.float(), gaze_mean, gaze_std).detach().cpu().numpy()[0]
         sample_predictions[source] = pred.tolist()
 
         heatmaps = {}
@@ -136,6 +144,8 @@ def explain_single_image_sources(args, model, sample, target_norm, gaze_mean, ga
                 target_gaze_norm=target_norm,
                 patch_size=args.occlusion_patch,
                 stride=args.occlusion_stride,
+                batch_size=getattr(args, "occlusion_batch", 16),
+                amp_autocast=amp_autocast,
             ).cpu().numpy()
 
         preferred = "occlusion" if "occlusion" in heatmaps else "smoothgrad"
