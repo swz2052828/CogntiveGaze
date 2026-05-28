@@ -138,9 +138,10 @@ def build_parser():
     train_parser.add_argument(
         "--early-stop-metric",
         choices=("val_loss", "val_error"),
-        default="val_loss",
+        default="val_error",
         help="Which validation metric drives --patience and best-checkpoint "
-             "selection. Defaults to val_loss to preserve previous behaviour.",
+             "selection. Defaults to val_error (val_coord_error), the metric "
+             "actually reported; pass val_loss to keep the prior behaviour.",
     )
     train_parser.add_argument(
         "--log-file",
