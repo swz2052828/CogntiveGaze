@@ -134,6 +134,77 @@ The diffusion generator picks attention slicing automatically
 (`--attention-slicing auto`): on for low-VRAM GPUs like the 2070 Super, off on
 the 5090 where it would only slow generation down.
 
+### Regularization and generalization (small-cohort overfit)
+
+With ~17 subjects the per-fold train/val loss gap reaches 30–200× on every
+backbone — classic small-cohort overfit. These flags address it. All are
+**off by default** so prior runs are unchanged; opt in to compose them.
+
+- **`--patience N`** — early-stop the fold if the monitored metric does not
+  improve for `N` epochs. Off by default. The best checkpoint is always saved.
+- **`--min-delta D`** — minimum improvement that counts as progress (gates
+  both the patience counter and best-checkpoint saving). Use `>0` with
+  `--patience` to ignore noisy single-epoch dips. Default `0.0` = strict.
+- **`--early-stop-metric {val_loss,val_error}`** — which metric drives
+  patience and best-checkpoint selection. Defaults to `val_error`, the
+  metric actually reported in cm.
+- **`--lr-scheduler {none,cosine,step}`** — anneal LR within each fold to
+  combat the constant-LR overfit plateau. `cosine` =
+  `CosineAnnealingLR(T_max=epochs, eta_min=0)`. `step` =
+  `StepLR(step_size=--step-size, gamma=--step-gamma)` (defaults 3 / 0.5).
+  Current LR is now logged each epoch so schedules are easy to verify.
+- **`--augment {none,light,medium}`** — per-image augmentation on multistream
+  crops, **training only** (validation is always clean). No horizontal flip
+  (gaze labels are screen-relative).
+  - `light`: `ColorJitter(0.2)` + `RandomResizedCrop(scale=0.90–1.0)`.
+  - `medium`: `ColorJitter(0.4)` + `RandomResizedCrop(scale=0.85–1.0)` +
+    `RandomGrayscale(p=0.05)`.
+
+### Subject-invariant features (`--subject-adv`)
+
+Domain-adversarial training (DANN, Ganin & Lempitsky 2016) attaches a
+subject-ID classifier to the fused per-stream feature through a
+**gradient-reversal layer**. The discriminator learns to identify the subject
+from the features; the reversed gradient pushes the encoder toward features
+from which subject identity (head shape, skin tone, camera distance
+appearance) cannot be recovered while gaze cues are retained. This is a
+**regularizer against subject-specific overfit**, not a replacement for
+per-subject calibration — calibration still removes the residual geometric
+offset.
+
+- **`--subject-adv`** — enable it (multistream only; off by default).
+- **`--adv-weight W`** — ceiling for the gradient-reversal strength λ
+  (default `0.1`). λ ramps `0 → W` using the Ganin
+  `2/(1+exp(−10p))−1` schedule so the regressor stabilizes before
+  invariance pressure ramps in. Too high → invariance erases the signal
+  calibration would have used, and `val_coord_error` worsens. Sweep
+  `{0.05, 0.1, 0.3}`.
+- **`--adv-warmup-frac F`** — fraction of total training over which λ
+  reaches `--adv-weight` (default `1.0`, the whole run; smaller values
+  reach full strength sooner).
+
+What to watch in the log: `adv_loss` should rise toward
+`ln(num_subjects)` as λ ramps (encoder winning ⇒ discriminator
+confused). Subject classes are the *current fold's training subjects only*
+— held-out subjects are never seen by the adversary, so the CV protocol is
+preserved. The discriminator is training-only and is **not** saved in the
+inference checkpoint, so `explain` and the `gaze_dynamics` export bridge
+are unchanged. Compose with calibration:
+
+```bash
+# training
+python vit_gaze_segmenter.py train ... \
+  --input-mode multistream --backbone vit \
+  --subject-adv --adv-weight 0.1 \
+  --augment light --lr-scheduler cosine \
+  --patience 8 --min-delta 0.005
+```
+
+The honest expectation is a modest cross-subject error reduction with the
+bigger structural win being reduced overfit. The result that justifies
+the approach in a writeup is **adversary + calibration beating
+calibration-alone** — especially on the hardest fold.
+
 ### Writing the log to a file
 
 By default the per-batch / per-epoch / accel log lines go to stdout. Pass

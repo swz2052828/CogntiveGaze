@@ -70,7 +70,14 @@ class MultiStreamViTGaze(MultistreamBackboneBase):
             nn.Linear(128, 2),
         )
 
-    def forward(self, face, eye_left, eye_right, grid=None):
+    def forward_features(self, face, eye_left, eye_right, grid=None):
+        """Return the fused per-stream vector the gaze head consumes.
+
+        Exposed so callers that need both the prediction and the fused feature
+        (e.g. the subject-adversary) can compute them with a single encoder
+        pass and without a Python-side forward hook -- which is what keeps
+        ``--compile`` graph-break-free in that combination.
+        """
         face_feat = self.encoder(face)
         eye_l_feat = self.encoder(eye_left)
         eye_r_feat = self.encoder(eye_right)
@@ -79,4 +86,7 @@ class MultiStreamViTGaze(MultistreamBackboneBase):
             if grid is None:
                 raise ValueError("Grid input expected but not provided.")
             feats.append(self.grid_mlp(grid))
-        return self.head(torch.cat(feats, dim=1))
+        return torch.cat(feats, dim=1)
+
+    def forward(self, face, eye_left, eye_right, grid=None):
+        return self.head(self.forward_features(face, eye_left, eye_right, grid))

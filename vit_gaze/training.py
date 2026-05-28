@@ -342,7 +342,12 @@ def train_epoch(
         adv_loss_val = None
         cur_lambda = None
         with accel.autocast(device, amp_enabled, amp_dtype):
-            pred, batch_size = _predict(model, batch, input_mode, device)
+            if adv is not None:
+                inputs = batch_multistream_for_mode(batch, device)
+                pred = adv.predict(model, inputs)
+                batch_size = inputs["face"].size(0)
+            else:
+                pred, batch_size = _predict(model, batch, input_mode, device)
             target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
             reg_loss = F.smooth_l1_loss(pred, target)
             loss = reg_loss

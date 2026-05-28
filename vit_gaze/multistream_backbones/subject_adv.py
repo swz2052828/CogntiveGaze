@@ -63,7 +63,8 @@ class SubjectDiscriminator(nn.Module):
 class _FeatureTap:
     """Capture the input to the backbone's final regression module.
 
-    The fused per-stream vector is the input to ``.head`` (ViT) or ``.fc`` (CNN
+    Fallback path for backbones that do not expose ``forward_features``. The
+    fused per-stream vector is the input to ``.head`` (ViT) or ``.fc`` (CNN
     baselines), so a forward pre-hook on that module yields exactly the
     representation the gaze head sees -- no backbone code changes needed. Works
     through a torch.compile wrapper by resolving ``_orig_mod`` first.
@@ -103,6 +104,16 @@ class SubjectAdversary:
     so a single backward over ``reg_loss + adv_loss`` updates both: the encoder
     via the reversed gradient (toward invariance) and the discriminator via the
     normal gradient (toward subject classification).
+
+    Two feature-tap paths:
+    * **Explicit** (preferred): if the backbone exposes ``forward_features``,
+      ``predict()`` calls it directly, then runs the head, so no Python-side
+      hook is installed and the combination ``--compile --subject-adv`` is
+      graph-break-free.
+    * **Hook fallback**: otherwise a forward pre-hook on the final regression
+      module (``.head`` / ``.fc``) captures the fused vector during a normal
+      forward. Works on every backbone but introduces one graph break under
+      ``--compile``.
     """
 
     def __init__(self, model, train_recordings, device, optimizer,
@@ -112,12 +123,36 @@ class SubjectAdversary:
         self.max_lambda = float(max_lambda)
         self.warmup_frac = max(1e-6, float(warmup_frac))
         self.total_steps = max(1, int(total_steps))
-        self.tap = _FeatureTap(model)
+        inner = getattr(model, "_orig_mod", model)
+        self._inner = inner
+        self.explicit = hasattr(inner, "forward_features")
+        self.tap = None if self.explicit else _FeatureTap(model)
+        self._captured = None
         recs = sorted(int(r) for r in train_recordings)
         self.rec2idx = {r: i for i, r in enumerate(recs)}
         self.num_subjects = len(recs)
         self.disc = None
         self._step = 0
+
+    def predict(self, model, inputs):
+        """Return gaze predictions. On the explicit path also captures features."""
+        if self.explicit:
+            fused = self._inner.forward_features(
+                inputs["face"], inputs["eye_left"], inputs["eye_right"],
+                inputs.get("grid"),
+            )
+            self._captured = fused
+            return self._inner.head(fused)
+        return model(
+            inputs["face"], inputs["eye_left"], inputs["eye_right"],
+            inputs.get("grid"),
+        )
+
+    def _features(self):
+        feat = self._captured if self.explicit else self.tap.captured
+        if feat is None:
+            raise RuntimeError("subject-adv: no features captured; run predict() first.")
+        return feat
 
     def current_lambda(self):
         # Ganin schedule: lambda ramps 0 -> max_lambda so the regressor
@@ -131,15 +166,13 @@ class SubjectAdversary:
             self.optimizer.add_param_group({"params": list(self.disc.parameters())})
 
     def loss(self, recs):
-        """Cross-entropy of the subject discriminator on the last captured feature.
+        """Cross-entropy of the subject discriminator on the captured feature.
 
         Lambda is applied inside the GRL (canonical DANN), so the returned loss
         is plain CE: the discriminator gets the full gradient while the encoder
         gets ``-lambda`` times it. Returns ``(adv_loss, lambda)``.
         """
-        feat = self.tap.captured
-        if feat is None:
-            raise RuntimeError("subject-adv: no features captured; run forward first.")
+        feat = self._features()
         self._ensure_disc(feat)
         lambd = self.current_lambda()
         logits = self.disc(grad_reverse(feat, lambd))
@@ -151,4 +184,5 @@ class SubjectAdversary:
         self._step += 1
 
     def remove(self):
-        self.tap.remove()
+        if self.tap is not None:
+            self.tap.remove()
