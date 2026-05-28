@@ -105,6 +105,11 @@ def _run_training(args):
 
     log(f"Device: {device}")
     log(f"Cross validation: {args.folds} folds by recording id")
+    backbone_str = (f" backbone={args.backbone}"
+                    if args.input_mode == "multistream" and hasattr(args, "backbone")
+                    else "")
+    log(f"Model: input_mode={args.input_mode}{backbone_str} "
+        f"weights={args.weights} freeze_encoder={args.freeze_encoder}")
     if args.fold_index is not None:
         log(f"Running only fold {args.fold_index}")
 
