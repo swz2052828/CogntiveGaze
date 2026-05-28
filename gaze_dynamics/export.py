@@ -132,6 +132,125 @@ def _build_dataset(args):
     return build_dataset(args, use_synthetic=use_synthetic, require_synthetic=require_synthetic)
 
 
+class MetaViTGazeExporter:
+    """Run a ``metatrain`` checkpoint, enrolling per recording before predicting.
+
+    Workflow per recording:
+    1. Take ``enroll_k`` calibration frames (the first ``enroll_k`` time-ordered
+       frames by default -- matches a real "calibration phase at session start").
+    2. Cache fused features for those frames, run ``inner_steps`` of SGD on a
+       fresh copy of the adapter starting from the meta-learned init.
+    3. Cache features for the remaining frames and predict with the adapted
+       adapter; the head and encoder are unchanged.
+
+    Writes the same per-recording file format as ``ViTGazeExporter`` so analyzers
+    consume the output unchanged. Multistream + a backbone exposing
+    ``forward_features`` (currently vit) only.
+    """
+
+    def __init__(self, checkpoint_path, device=None, inner_steps=None, inner_lr=None):
+        import torch
+        from vit_gaze.models import create_model
+        from vit_gaze.multistream_backbones.adapters import make_adapter
+
+        self.torch = torch
+        self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        ckpt = torch.load(checkpoint_path, map_location=self.device)
+        saved = ckpt.get("args", {})
+        if saved.get("input_mode") != "multistream":
+            raise ValueError("MetaViTGazeExporter requires a multistream metatrain checkpoint.")
+        self.input_mode = "multistream"
+        self.model = create_model(
+            input_mode="multistream",
+            weights="none",
+            freeze_encoder=True,
+            use_grid=bool(saved.get("use_grid", False)),
+            grid_size=int(saved.get("grid_size", 25)),
+            backbone=str(saved.get("backbone", "vit")),
+        ).to(self.device)
+        if not hasattr(self.model, "forward_features"):
+            raise ValueError("Meta enrollment needs forward_features on the backbone.")
+        self.model.load_state_dict(ckpt["model"])
+        self.model.eval()
+
+        dim = int(ckpt["adapter_dim"])
+        kind = str(ckpt["adapter_kind"])
+        self.adapter_kind = kind
+        self.adapter_template = make_adapter(
+            kind, dim,
+            rank=int(ckpt.get("lora_rank", 8)),
+            alpha=float(ckpt.get("lora_alpha", 8.0)),
+        ).to(self.device)
+        self.adapter_template.load_state_dict(ckpt["adapter"])
+
+        self.gaze_mean = ckpt["gaze_mean"].to(self.device)
+        self.gaze_std = ckpt["gaze_std"].to(self.device)
+        self.inner_steps = int(inner_steps if inner_steps is not None else ckpt.get("inner_steps", 5))
+        self.inner_lr = float(inner_lr if inner_lr is not None else ckpt.get("inner_lr", 1e-2))
+
+    def _cache_features(self, dataset, indices, batch_size, num_workers):
+        import torch
+        import torch.utils.data as data
+        from vit_gaze.models import batch_multistream_for_mode
+        loader = data.DataLoader(
+            data.Subset(dataset, list(indices)), batch_size=batch_size, shuffle=False,
+            num_workers=num_workers, pin_memory=torch.cuda.is_available())
+        feats, gazes = [], []
+        with torch.no_grad():
+            for batch in loader:
+                inputs = batch_multistream_for_mode(batch, self.device)
+                f = self.model.forward_features(
+                    inputs["face"], inputs["eye_left"], inputs["eye_right"], inputs.get("grid"))
+                feats.append(f.float())
+                gazes.append(batch["gaze"].to(self.device))
+        return torch.cat(feats), torch.cat(gazes)
+
+    def _adapt(self, feats_sup, gazes_sup):
+        """Inner-loop SGD on a fresh copy of the adapter starting from the meta init."""
+        import torch
+        import torch.nn.functional as F
+        from vit_gaze.training import normalize_gaze
+        params = [p.detach().clone().requires_grad_(True)
+                  for p in self.adapter_template.parameters()]
+        y_sup = normalize_gaze(gazes_sup, self.gaze_mean, self.gaze_std)
+        for _ in range(self.inner_steps):
+            pred = self.model.head(self.adapter_template.func(feats_sup, params))
+            loss = F.smooth_l1_loss(pred, y_sup)
+            grads = torch.autograd.grad(loss, params)
+            params = [(p - self.inner_lr * g).detach().requires_grad_(True)
+                      for p, g in zip(params, grads)]
+        return [p.detach() for p in params]
+
+    def export_by_recording(self, dataset, out_dir, enroll_k, batch_size=64, num_workers=4,
+                            transform=None, item=0):
+        """One file per recording. Enroll on first ``enroll_k`` frames, predict on the rest."""
+        import numpy as np
+        import torch
+        from vit_gaze.training import denormalize_gaze
+        written = []
+        for rec in np.unique(dataset.recordings):
+            indices = dataset.indices_for_recordings([rec])
+            indices = sorted(indices, key=lambda i: _frame_of(dataset, i))
+            if len(indices) <= enroll_k:
+                continue
+            sup_idx, qry_idx = indices[:enroll_k], indices[enroll_k:]
+            feats_sup, gazes_sup = self._cache_features(dataset, sup_idx, batch_size, num_workers)
+            params = self._adapt(feats_sup, gazes_sup)
+            feats_qry, gazes_qry = self._cache_features(dataset, qry_idx, batch_size, num_workers)
+            with torch.no_grad():
+                pred = denormalize_gaze(
+                    self.model.head(self.adapter_template.func(feats_qry, params)).float(),
+                    self.gaze_mean, self.gaze_std,
+                ).cpu().numpy()
+            gt = gazes_qry.cpu().numpy()
+            frames = np.array([_frame_of(dataset, i) for i in qry_idx])
+            if transform is not None:
+                pred = transform(pred)
+                gt = transform(gt)
+            written.append(save_gaze_item(out_dir, int(rec), item, pred.T, gt.T, frames))
+        return written
+
+
 def build_parser():
     import argparse
     p = argparse.ArgumentParser(
@@ -162,15 +281,37 @@ def build_parser():
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--device", default=None)
+    # meta-enrollment (optional; for metatrain checkpoints)
+    p.add_argument(
+        "--meta", action="store_true",
+        help="Load the checkpoint as a `metatrain` artifact and enroll the adapter "
+             "on the first --enroll-k frames per recording before predicting the rest.",
+    )
+    p.add_argument("--enroll-k", type=int, default=16,
+                   help="Calibration frames per recording when --meta is set (default 16).")
+    p.add_argument("--inner-steps", type=int, default=None,
+                   help="Override the meta checkpoint's enrollment inner_steps.")
+    p.add_argument("--inner-lr", type=float, default=None,
+                   help="Override the meta checkpoint's enrollment inner_lr.")
     return p
 
 
 def main():
     args = build_parser().parse_args()
     dataset = _build_dataset(args)
-    exporter = ViTGazeExporter(args.checkpoint, device=args.device)
-    written = exporter.export_by_recording(
-        dataset, args.out_dir, batch_size=args.batch_size, num_workers=args.num_workers)
+    if args.meta:
+        exporter = MetaViTGazeExporter(
+            args.checkpoint, device=args.device,
+            inner_steps=args.inner_steps, inner_lr=args.inner_lr,
+        )
+        written = exporter.export_by_recording(
+            dataset, args.out_dir, enroll_k=args.enroll_k,
+            batch_size=args.batch_size, num_workers=args.num_workers,
+        )
+    else:
+        exporter = ViTGazeExporter(args.checkpoint, device=args.device)
+        written = exporter.export_by_recording(
+            dataset, args.out_dir, batch_size=args.batch_size, num_workers=args.num_workers)
     print(f"Wrote {len(written)} gaze files to {args.out_dir}")
 
 

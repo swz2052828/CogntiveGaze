@@ -2,6 +2,7 @@ import argparse
 
 from .explain import explain
 from .meta import meta_train
+from .metacompare import metacompare
 from .training import train
 
 
@@ -279,6 +280,36 @@ def build_parser():
     meta_parser.add_argument("--seed", type=int, default=42)
     meta_parser.add_argument("--log-file", default=None)
 
+    cmp_parser = subparsers.add_parser(
+        "metacompare",
+        help="Apples-to-apples per-subject calibration comparison at matched K: "
+             "base / per-subject SVR / meta-learned adapter, scored on the same "
+             "support/query draws.",
+    )
+    add_common_args(cmp_parser)
+    cmp_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    cmp_parser.add_argument("--base-checkpoint", required=True,
+                            help="Trained `train` checkpoint (encoder+head).")
+    cmp_parser.add_argument("--meta-checkpoint", required=True,
+                            help="Trained `metatrain` checkpoint (encoder+head+adapter init).")
+    cmp_parser.add_argument("--k", type=int, default=16,
+                            help="Calibration frames per subject (matched across the three methods).")
+    cmp_parser.add_argument("--trials", type=int, default=5,
+                            help="Random support/query draws per recording; results are averaged.")
+    cmp_parser.add_argument("--inner-steps", type=int, default=5)
+    cmp_parser.add_argument("--inner-lr", type=float, default=1e-2)
+    cmp_parser.add_argument("--svr-C", type=float, default=1.0)
+    cmp_parser.add_argument("--svr-eps", type=float, default=0.1)
+    cmp_parser.add_argument("--svr-gamma", default="scale")
+    cmp_parser.add_argument("--batch-size", type=int, default=64)
+    cmp_parser.add_argument("--num-workers", type=int, default=4)
+    cmp_parser.add_argument("--folds", type=int, default=5)
+    cmp_parser.add_argument("--fold-index", type=int, default=None)
+    cmp_parser.add_argument("--seed", type=int, default=42)
+    cmp_parser.add_argument("--log-file", default=None)
+    cmp_parser.add_argument("--csv-out", default=None,
+                            help="Append per-fold rows to this CSV for plotting.")
+
     explain_parser = subparsers.add_parser("explain")
     add_common_args(explain_parser)
     explain_parser.add_argument("--checkpoint", required=True)
@@ -322,6 +353,8 @@ def main():
         train(args)
     elif args.command == "metatrain":
         meta_train(args)
+    elif args.command == "metacompare":
+        metacompare(args)
     elif args.command == "explain":
         explain(args)
     else:

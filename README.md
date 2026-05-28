@@ -253,6 +253,50 @@ floor. The headline comparison for a writeup is **meta-adaptation vs SVR**
 at the same K, and ideally **meta-adaptation stacked on `--subject-adv`
 features**.
 
+### Enrollment-aware export (`gaze_dynamics/export.py --meta`)
+
+To get adapter-calibrated predictions into the `gaze_dynamics` analyzers, run
+the bridge with `--meta`. The exporter enrolls per recording on the first
+`--enroll-k` time-ordered frames (a realistic "calibration phase at session
+start"), then writes one per-recording file containing predictions on the
+remaining frames:
+
+```bash
+python -m gaze_dynamics.export ... \
+  --checkpoint ./meta_out/fold0_meta_film_vit_gaze.pth \
+  --meta --enroll-k 16 --out-dir ./meta_calibrated_gaze
+```
+
+`--inner-steps` / `--inner-lr` override the values baked into the checkpoint
+if you want to tune enrollment without retraining.
+
+### Comparing base / SVR / meta at matched K (`metacompare`)
+
+The result that justifies the meta approach in a writeup is **meta beats SVR
+at the same K on the same support/query draws.** The `metacompare` subcommand
+does exactly that — for each held-out recording it draws `--trials` random
+K-subsets and scores all three:
+
+* **base**: the model's prediction with no per-subject calibration.
+* **svr**: two RBF-SVRs (`--svr-C`, `--svr-eps`, `--svr-gamma`) fit on K
+  `(predicted_xy, true_xy)` pairs, applied to the base predictions.
+* **meta**: `--inner-steps` of SGD on the meta-learned adapter init using K
+  support features.
+
+```bash
+python vit_gaze_segmenter.py metacompare ... \
+  --base-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --meta-checkpoint ./meta_out/fold0_meta_film_vit_gaze.pth \
+  --k 16 --trials 5 --fold-index 0 \
+  --csv-out metacompare.csv
+```
+
+Per fold the log prints per-recording `base / svr / meta` cm errors plus the
+three deltas (`svr_gain`, `meta_gain`, `meta_vs_svr`); a CV summary line at
+the end aggregates across folds. The `--csv-out` flag appends a row per fold,
+which is useful for sweeping `--k` over `{4, 8, 16, 32, 64}` to plot a
+calibration-points-vs-error curve for both methods on the same axes.
+
 ### Writing the log to a file
 
 By default the per-batch / per-epoch / accel log lines go to stdout. Pass
