@@ -181,8 +181,10 @@ def train_one_fold(args, dataset, split, device):
 
     # Early-stopping bookkeeping. patience=None disables it; the monitored
     # metric also drives "best" checkpoint selection so the two are consistent.
+    # min_delta sets the minimum improvement that counts as progress.
     patience = getattr(args, "patience", None)
-    monitor = getattr(args, "early_stop_metric", "val_loss")
+    monitor = getattr(args, "early_stop_metric", "val_error")
+    min_delta = float(getattr(args, "min_delta", 0.0))
     if monitor not in ("val_loss", "val_error"):
         raise ValueError(f"--early-stop-metric must be val_loss or val_error, got {monitor}")
     epochs_since_improve = 0
@@ -240,7 +242,7 @@ def train_one_fold(args, dataset, split, device):
 
         current = val_loss if monitor == "val_loss" else val_error
         best_so_far = best_val_loss if monitor == "val_loss" else best_val_error
-        if current < best_so_far:
+        if current < best_so_far - min_delta:
             best_val_loss = val_loss
             best_val_error = val_error
             epochs_since_improve = 0
@@ -250,8 +252,8 @@ def train_one_fold(args, dataset, split, device):
             if patience is not None and epochs_since_improve >= patience:
                 log(
                     f"Fold {fold} early stop at epoch {epoch + 1}/{args.epochs}: "
-                    f"{monitor} did not improve for {patience} epochs "
-                    f"(best {monitor}={best_so_far:.6f})"
+                    f"{monitor} did not improve by >= {min_delta} for "
+                    f"{patience} epochs (best {monitor}={best_so_far:.6f})"
                 )
                 break
 

@@ -136,6 +136,14 @@ def build_parser():
              "The best checkpoint is still saved.",
     )
     train_parser.add_argument(
+        "--min-delta",
+        type=float,
+        default=0.0,
+        help="Minimum improvement in the monitored metric to count as progress "
+             "(0 = strict improvement, the default). Useful with --patience to "
+             "ignore noisy single-epoch dips. Also gates best-checkpoint saving.",
+    )
+    train_parser.add_argument(
         "--early-stop-metric",
         choices=("val_loss", "val_error"),
         default="val_error",
