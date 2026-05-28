@@ -138,6 +138,17 @@ def build_parser():
         help="Multiplicative LR decay per step for --lr-scheduler step. Default 0.5.",
     )
     train_parser.add_argument(
+        "--augment",
+        choices=("none", "light", "medium"),
+        default="none",
+        help=(
+            "Data augmentation applied to multistream crops (face + eyes) during training only. "
+            "light: ColorJitter(0.2/0.2/0.2) + RandomResizedCrop(scale=0.90-1.0). "
+            "medium: ColorJitter(0.4/0.4/0.4) + RandomResizedCrop(scale=0.85-1.0) + RandomGrayscale(p=0.05). "
+            "No horizontal flip: gaze labels are screen-relative. Off by default."
+        ),
+    )
+    train_parser.add_argument(
         "--compile",
         action="store_true",
         help="Wrap the model with torch.compile for extra throughput (falls back "

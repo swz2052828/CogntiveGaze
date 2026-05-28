@@ -8,7 +8,12 @@ import torch.nn.functional as F
 import torch.utils.data as data
 
 from . import accel
-from .dataset import build_dataset, build_multistream_dataset
+from .dataset import (
+    AugmentedSubset,
+    build_dataset,
+    build_multistream_dataset,
+    make_augment_transform,
+)
 from .models import (
     batch_images_for_mode,
     batch_multistream_for_mode,
@@ -60,8 +65,10 @@ def denormalize_gaze(gaze, mean, std):
     return gaze * std + mean
 
 
-def make_loader(dataset, indices, batch_size, shuffle, num_workers):
+def make_loader(dataset, indices, batch_size, shuffle, num_workers, augment_transform=None):
     subset = data.Subset(dataset, indices)
+    if augment_transform is not None:
+        subset = AugmentedSubset(subset, augment_transform)
     loader_kwargs = dict(
         batch_size=batch_size,
         shuffle=shuffle,
@@ -172,7 +179,14 @@ def train_one_fold(args, dataset, split, device):
     if scheduler is not None:
         log(f"Fold {fold} lr_scheduler={getattr(args, 'lr_scheduler', 'none')}")
 
-    train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers)
+    augment = getattr(args, "augment", "none")
+    aug_transform = None
+    if args.input_mode == "multistream" and augment and augment != "none":
+        aug_transform = make_augment_transform(augment, args.image_size)
+        log(f"Fold {fold} augment={augment}")
+
+    train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers,
+                               augment_transform=aug_transform)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
 
     gaze_mean_device = gaze_mean.to(device)

@@ -320,6 +320,56 @@ class MultiStreamGazeDataset(data.Dataset):
         return item
 
 
+def make_augment_transform(level, image_size):
+    """Return a torchvision Compose transform for the given augmentation level, or None.
+
+    Designed for normalized CHW float tensors from _load_image_cv2.
+    NO horizontal flip: gaze labels are screen-relative; mirroring the image
+    without mirroring the gaze target would corrupt training signal.
+    """
+    import torchvision.transforms as T
+    if not level or level == "none":
+        return None
+    if level == "light":
+        return T.Compose([
+            T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+            T.RandomResizedCrop(image_size, scale=(0.90, 1.0), ratio=(1.0, 1.0)),
+        ])
+    if level == "medium":
+        return T.Compose([
+            T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+            T.RandomResizedCrop(image_size, scale=(0.85, 1.0), ratio=(1.0, 1.0)),
+            T.RandomGrayscale(p=0.05),
+        ])
+    raise ValueError(f"Unknown augmentation level: {level!r}. Choose none/light/medium.")
+
+
+class AugmentedSubset(data.Dataset):
+    """Wraps a Subset and applies per-image augmentation to selected keys.
+
+    Only wraps training subsets; validation subsets are left unwrapped so
+    augmentation never affects reported metrics.
+    """
+
+    def __init__(self, subset, transform, image_keys=("face", "eye_left", "eye_right")):
+        self.subset = subset
+        self.transform = transform
+        self.image_keys = image_keys
+
+    def __len__(self):
+        return len(self.subset)
+
+    def __getitem__(self, idx):
+        item = self.subset[idx]
+        if self.transform is None:
+            return item
+        item = dict(item)
+        for key in self.image_keys:
+            if key in item:
+                item[key] = self.transform(item[key])
+        return item
+
+
 def build_multistream_dataset(args):
     return MultiStreamGazeDataset(
         data_path=args.data_path,
