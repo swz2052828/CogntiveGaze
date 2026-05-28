@@ -179,6 +179,14 @@ def train_one_fold(args, dataset, split, device):
     out_path = Path(args.out_path)
     out_path.mkdir(parents=True, exist_ok=True)
 
+    # Early-stopping bookkeeping. patience=None disables it; the monitored
+    # metric also drives "best" checkpoint selection so the two are consistent.
+    patience = getattr(args, "patience", None)
+    monitor = getattr(args, "early_stop_metric", "val_loss")
+    if monitor not in ("val_loss", "val_error"):
+        raise ValueError(f"--early-stop-metric must be val_loss or val_error, got {monitor}")
+    epochs_since_improve = 0
+
     for epoch in range(args.epochs):
         epoch_start = time.perf_counter()
         train_loss = train_epoch(
@@ -229,10 +237,23 @@ def train_one_fold(args, dataset, split, device):
             "val_error": val_error,
         }
         torch.save(checkpoint, out_path / f"fold{fold}_last_{args.backbone}_gaze_segmenter.pth")
-        if val_loss < best_val_loss:
+
+        current = val_loss if monitor == "val_loss" else val_error
+        best_so_far = best_val_loss if monitor == "val_loss" else best_val_error
+        if current < best_so_far:
             best_val_loss = val_loss
             best_val_error = val_error
+            epochs_since_improve = 0
             torch.save(checkpoint, out_path / f"fold{fold}_best_{args.backbone}_gaze_segmenter.pth")
+        else:
+            epochs_since_improve += 1
+            if patience is not None and epochs_since_improve >= patience:
+                log(
+                    f"Fold {fold} early stop at epoch {epoch + 1}/{args.epochs}: "
+                    f"{monitor} did not improve for {patience} epochs "
+                    f"(best {monitor}={best_so_far:.6f})"
+                )
+                break
 
     fold_time = time.perf_counter() - fold_start
     log(
