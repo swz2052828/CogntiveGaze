@@ -1,6 +1,7 @@
 import argparse
 
 from .explain import explain
+from .meta import meta_train
 from .training import train
 
 
@@ -223,6 +224,61 @@ def build_parser():
     )
     train_parser.add_argument("--seed", type=int, default=42)
 
+    meta_parser = subparsers.add_parser(
+        "metatrain",
+        help="Meta-learn a per-subject calibration adapter (FiLM/LoRA) with "
+             "FOMAML/ANIL. Multistream + a backbone exposing forward_features "
+             "(vit). Reports pre- vs post-adaptation coord error on held-out "
+             "recordings -- the comparison point against per-subject SVR.",
+    )
+    add_common_args(meta_parser)
+    meta_parser.add_argument("--out-path", default="./vit_gaze_meta_output")
+    meta_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    meta_parser.add_argument(
+        "--backbone", choices=("vit",), default="vit",
+        help="Only backbones exposing forward_features are supported (vit).",
+    )
+    meta_parser.add_argument("--weights", choices=("none", "imagenet"), default="imagenet")
+    meta_parser.add_argument("--freeze-encoder", action="store_true")
+    meta_parser.add_argument(
+        "--init-checkpoint", default=None,
+        help="Load encoder+head from a prior `train` checkpoint so meta-learning "
+             "starts from gaze-tuned features (strongly recommended; otherwise "
+             "the frozen encoder is only ImageNet/random).",
+    )
+    meta_parser.add_argument(
+        "--adapter", choices=("film", "lora"), default="film",
+        help="Per-subject adapter meta-learned for calibration. film: (gamma,beta) "
+             "scale+shift on the fused feature (tiny, robust at small K). lora: "
+             "low-rank residual (more expressive, higher overfit risk at small K).",
+    )
+    meta_parser.add_argument("--lora-rank", type=int, default=8)
+    meta_parser.add_argument("--lora-alpha", type=float, default=8.0)
+    meta_parser.add_argument(
+        "--meta-support", type=int, default=16,
+        help="K: calibration frames per subject used to adapt (support set).",
+    )
+    meta_parser.add_argument(
+        "--meta-query", type=int, default=32,
+        help="Query frames per task per outer step (the post-adaptation loss).",
+    )
+    meta_parser.add_argument("--inner-steps", type=int, default=5)
+    meta_parser.add_argument("--inner-lr", type=float, default=1e-2)
+    meta_parser.add_argument("--outer-lr", type=float, default=1e-3)
+    meta_parser.add_argument(
+        "--adapt-steps", type=int, default=None,
+        help="Inner steps used at enrollment/eval (defaults to --inner-steps).",
+    )
+    meta_parser.add_argument("--meta-iters", type=int, default=2000)
+    meta_parser.add_argument("--tasks-per-batch", type=int, default=4)
+    meta_parser.add_argument("--print-freq", type=int, default=100)
+    meta_parser.add_argument("--batch-size", type=int, default=64)
+    meta_parser.add_argument("--num-workers", type=int, default=4)
+    meta_parser.add_argument("--folds", type=int, default=5)
+    meta_parser.add_argument("--fold-index", type=int, default=None)
+    meta_parser.add_argument("--seed", type=int, default=42)
+    meta_parser.add_argument("--log-file", default=None)
+
     explain_parser = subparsers.add_parser("explain")
     add_common_args(explain_parser)
     explain_parser.add_argument("--checkpoint", required=True)
@@ -264,6 +320,8 @@ def main():
     args = build_parser().parse_args()
     if args.command == "train":
         train(args)
+    elif args.command == "metatrain":
+        meta_train(args)
     elif args.command == "explain":
         explain(args)
     else:

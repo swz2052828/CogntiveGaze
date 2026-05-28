@@ -205,6 +205,54 @@ bigger structural win being reduced overfit. The result that justifies
 the approach in a writeup is **adversary + calibration beating
 calibration-alone** — especially on the hardest fold.
 
+## Meta-learned per-subject calibration (`metatrain`)
+
+A separate subcommand that learns a **feature-space, nonlinear** replacement
+for per-subject SVR and meta-trains it so adapting on only K calibration
+frames generalizes to the rest of a subject's session. This attacks the ~5 cm
+floor directly: SVR linearly corrects the 2D output, whereas this adapts the
+full fused feature the head reads.
+
+- **Each recording is a task.** An episode splits a recording into a *support*
+  set (K calibration frames) and a *query* set (the rest) — the enrollment
+  scenario, optimized end to end (ANIL + FOMAML; Raghu 2020 / Finn 2017).
+- **Encoder frozen** (ANIL), so the fused feature is constant per frame and is
+  **cached once per fold** — meta-training runs on cached `[N, dim]` tensors
+  with no ViT in the loop (fast even on the 2070 Super).
+- Meta-learned parameters: the shared gaze **head** + the **adapter init**.
+  The inner loop adapts only the adapter; the outer loop (first-order)
+  minimizes post-adaptation query loss.
+
+Adapters (`--adapter`):
+- **`film`** (default) — per-subject `γ,β` scale+shift on the fused feature
+  (`2·dim` params; robust at small K).
+- **`lora`** — low-rank residual at the head input (`--lora-rank`,
+  `--lora-alpha`; more expressive, higher overfit risk at small K).
+
+Key flags: `--init-checkpoint` (load a trained `train` checkpoint's
+encoder+head so meta-learning starts from gaze-tuned features — strongly
+recommended), `--meta-support K`, `--meta-query`, `--inner-steps`,
+`--inner-lr`, `--outer-lr`, `--meta-iters`, `--tasks-per-batch`,
+`--adapt-steps` (inner steps at enrollment/eval).
+
+```bash
+# 1) train the base model normally (produces fold checkpoints)
+python vit_gaze_segmenter.py train ... --input-mode multistream --backbone vit \
+  --weights imagenet --out-path ./base_out
+
+# 2) meta-learn the calibration adapter on top of the frozen, trained encoder
+python vit_gaze_segmenter.py metatrain ... --backbone vit \
+  --init-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --adapter film --meta-support 16 --inner-steps 5 --meta-iters 2000 \
+  --fold-index 0
+```
+
+Each fold logs `meta_pre_adapt_error` vs `meta_post_adapt_error` (cm) on the
+held-out recordings — the apples-to-apples number against the SVR-calibrated
+floor. The headline comparison for a writeup is **meta-adaptation vs SVR**
+at the same K, and ideally **meta-adaptation stacked on `--subject-adv`
+features**.
+
 ### Writing the log to a file
 
 By default the per-batch / per-epoch / accel log lines go to stdout. Pass
