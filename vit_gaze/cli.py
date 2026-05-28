@@ -128,6 +128,22 @@ def build_parser():
         help="Run only one 0-based fold. Useful with Slurm array jobs.",
     )
     train_parser.add_argument(
+        "--patience",
+        type=int,
+        default=None,
+        help="Early-stop training within a fold if the monitored validation "
+             "metric does not improve for this many epochs. Off by default. "
+             "The best checkpoint is still saved.",
+    )
+    train_parser.add_argument(
+        "--early-stop-metric",
+        choices=("val_loss", "val_error"),
+        default="val_error",
+        help="Which validation metric drives --patience and best-checkpoint "
+             "selection. Defaults to val_error (val_coord_error), the metric "
+             "actually reported; pass val_loss to keep the prior behaviour.",
+    )
+    train_parser.add_argument(
         "--log-file",
         default=None,
         help="Also append every training/optimization log line to this file "
