@@ -168,6 +168,9 @@ def train_one_fold(args, dataset, split, device):
     amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
     scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
     log(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
+    scheduler = _make_scheduler(optimizer, args)
+    if scheduler is not None:
+        log(f"Fold {fold} lr_scheduler={getattr(args, 'lr_scheduler', 'none')}")
 
     train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
@@ -217,13 +220,17 @@ def train_one_fold(args, dataset, split, device):
             amp_dtype=amp_dtype,
         )
         epoch_time = time.perf_counter() - epoch_start
+        current_lr = optimizer.param_groups[0]["lr"]
         log(
             f"Fold {fold} epoch {epoch + 1}/{args.epochs} validation "
             f"val_loss={val_loss:.6f} "
             f"val_coord_error={val_error:.6f} "
             f"train_loss_mean={train_loss:.6f} "
+            f"lr={current_lr:.2e} "
             f"epoch_time_sec={epoch_time:.2f}"
         )
+        if scheduler is not None:
+            scheduler.step()
 
         checkpoint = {
             "model": _unwrap(model).state_dict(),
@@ -393,6 +400,23 @@ def _maybe_compile(model):
     except Exception as exc:  # pragma: no cover - backend/hardware dependent
         log(f"torch.compile failed ({exc}); running eagerly.")
         return model
+
+
+def _make_scheduler(optimizer, args):
+    name = getattr(args, "lr_scheduler", "none")
+    if not name or name == "none":
+        return None
+    if name == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=0.0
+        )
+    if name == "step":
+        return torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=getattr(args, "step_size", 3),
+            gamma=getattr(args, "step_gamma", 0.5),
+        )
+    raise ValueError(f"Unknown --lr-scheduler: {name!r}")
 
 
 def _predict(model, batch, input_mode, device):

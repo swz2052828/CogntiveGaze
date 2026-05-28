@@ -115,6 +115,29 @@ def build_parser():
     train_parser.add_argument("--lr", type=float, default=1e-4)
     train_parser.add_argument("--weight-decay", type=float, default=1e-4)
     train_parser.add_argument(
+        "--lr-scheduler",
+        choices=("none", "cosine", "step"),
+        default="none",
+        help=(
+            "LR schedule applied within each fold. "
+            "'cosine' = CosineAnnealingLR(T_max=epochs, eta_min=0); "
+            "'step' = StepLR(step_size=--step-size, gamma=--step-gamma). "
+            "Default 'none' keeps constant LR."
+        ),
+    )
+    train_parser.add_argument(
+        "--step-size",
+        type=int,
+        default=3,
+        help="Epoch interval between LR drops for --lr-scheduler step. Default 3.",
+    )
+    train_parser.add_argument(
+        "--step-gamma",
+        type=float,
+        default=0.5,
+        help="Multiplicative LR decay per step for --lr-scheduler step. Default 0.5.",
+    )
+    train_parser.add_argument(
         "--compile",
         action="store_true",
         help="Wrap the model with torch.compile for extra throughput (falls back "
