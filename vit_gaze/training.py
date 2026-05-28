@@ -189,6 +189,25 @@ def train_one_fold(args, dataset, split, device):
                                augment_transform=aug_transform)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
 
+    # Domain-adversarial subject invariance (DANN). Built after the optimizer
+    # and loader so it can size the lambda schedule to the fold's step count and
+    # append the discriminator's params to the existing optimizer.
+    adv = None
+    if getattr(args, "subject_adv", False):
+        if args.input_mode != "multistream":
+            raise ValueError("--subject-adv requires --input-mode multistream")
+        from .multistream_backbones.subject_adv import SubjectAdversary
+        total_steps = max(1, args.epochs * len(train_loader))
+        adv = SubjectAdversary(
+            model, split["train_recordings"], device, optimizer,
+            max_lambda=args.adv_weight,
+            warmup_frac=getattr(args, "adv_warmup_frac", 1.0),
+            total_steps=total_steps,
+        )
+        log(f"Fold {fold} subject_adv on subjects={adv.num_subjects} "
+            f"adv_weight={args.adv_weight} "
+            f"warmup_frac={getattr(args, 'adv_warmup_frac', 1.0)}")
+
     gaze_mean_device = gaze_mean.to(device)
     gaze_std_device = gaze_std.to(device)
     best_val_loss = float("inf")
@@ -222,6 +241,7 @@ def train_one_fold(args, dataset, split, device):
             scaler=scaler,
             amp_enabled=amp_enabled,
             amp_dtype=amp_dtype,
+            adv=adv,
         )
         val_loss, val_error = evaluate(
             model=model,
@@ -278,6 +298,9 @@ def train_one_fold(args, dataset, split, device):
                 )
                 break
 
+    if adv is not None:
+        adv.remove()
+
     fold_time = time.perf_counter() - fold_start
     log(
         f"Fold {fold} done "
@@ -307,6 +330,7 @@ def train_epoch(
     scaler=None,
     amp_enabled=False,
     amp_dtype=None,
+    adv=None,
 ):
     model.train()
     total_loss = 0.0
@@ -315,10 +339,17 @@ def train_epoch(
     for batch_idx, batch in enumerate(loader, start=1):
         batch_start = time.perf_counter()
         optimizer.zero_grad(set_to_none=True)
+        adv_loss_val = None
+        cur_lambda = None
         with accel.autocast(device, amp_enabled, amp_dtype):
             pred, batch_size = _predict(model, batch, input_mode, device)
             target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
-            loss = F.smooth_l1_loss(pred, target)
+            reg_loss = F.smooth_l1_loss(pred, target)
+            loss = reg_loss
+            if adv is not None:
+                adv_loss, cur_lambda = adv.loss(batch["rec"])
+                loss = reg_loss + adv_loss
+                adv_loss_val = adv_loss.item()
 
         if scaler is not None:
             scaler.scale(loss).backward()
@@ -327,16 +358,24 @@ def train_epoch(
         else:
             loss.backward()
             optimizer.step()
+        if adv is not None:
+            adv.advance()
 
-        total_loss += loss.item() * batch_size
+        # Report the regression loss (the comparable quantity across runs); the
+        # adversarial term is logged separately when active.
+        total_loss += reg_loss.item() * batch_size
         total_count += batch_size
         running_loss = total_loss / max(1, total_count)
         batch_time = time.perf_counter() - batch_start
         if (batch_idx % print_freq) == 0:
+            adv_str = ""
+            if adv_loss_val is not None:
+                adv_str = f"adv_loss={adv_loss_val:.6f} adv_lambda={cur_lambda:.4f} "
             log(
                 f"Fold {fold} epoch {epoch + 1}/{total_epochs} "
                 f"batch {batch_idx}/{total_batches} "
-                f"batch_loss={loss.item():.6f} "
+                f"batch_loss={reg_loss.item():.6f} "
+                f"{adv_str}"
                 f"running_train_loss={running_loss:.6f} "
                 f"batch_time_sec={batch_time:.2f}"
             )

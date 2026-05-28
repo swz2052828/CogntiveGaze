@@ -149,6 +149,33 @@ def build_parser():
         ),
     )
     train_parser.add_argument(
+        "--subject-adv",
+        action="store_true",
+        help=(
+            "Domain-adversarial subject invariance (DANN). Multistream only. "
+            "Attaches a subject-ID classifier to the fused feature through a "
+            "gradient-reversal layer so the encoder learns subject-invariant "
+            "gaze features (regularizes the small cohort; composes with, does "
+            "not replace, per-subject calibration). Training-only; the "
+            "inference checkpoint is unchanged. Off by default."
+        ),
+    )
+    train_parser.add_argument(
+        "--adv-weight",
+        type=float,
+        default=0.1,
+        help="Ceiling for the gradient-reversal strength lambda, which ramps "
+             "0 -> this over training (Ganin schedule). Default 0.1.",
+    )
+    train_parser.add_argument(
+        "--adv-warmup-frac",
+        type=float,
+        default=1.0,
+        help="Fraction of total training steps over which lambda ramps to "
+             "--adv-weight. 1.0 (default) ramps across the whole run; smaller "
+             "values reach full strength sooner.",
+    )
+    train_parser.add_argument(
         "--compile",
         action="store_true",
         help="Wrap the model with torch.compile for extra throughput (falls back "
