@@ -6,12 +6,12 @@ written back-to-back with ``np.save`` -- predicted xy ``[2, N]``, ground-truth
 xy ``[2, N]``, frame indices ``[N]``. This is the exact inverse of
 ``io.load_gaze_data``, so analyzers can consume model output unchanged.
 
-Coordinate note: the model emits gaze in its training target space (the
-metadata ``labelDotXCam`` / ``labelDotYCam`` units). The analyzers later call
-``scale_to_screen(xy, screen_res, (W, H))``, i.e. they assume the values are in
-``screen_res`` pixels. If your model's space differs, pass a ``transform``
-callable to convert ``[N, 2]`` predictions (and, if needed, ground truth) into
-that pixel space -- this bridge does not guess the mapping.
+Coordinate note: ``MakeMeta.py`` stores ``labelDotXCam/Y`` as screen-cm (e.g.
+``[0, 54.4]`` x ``[0, 30.4]``), so ``vit_gaze`` predictions land in cm too.
+The gaze_dynamics analyzers default to pixels (``screen_res=(1920, 1080)``).
+Pass ``transform=geometry.cm_to_pixels`` to ``ViTGazeExporter`` so the exported
+files are already in pixels; otherwise call the analyzers with
+``screen_res=(54.4, 30.4)`` instead.
 """
 
 import os
