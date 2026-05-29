@@ -391,6 +391,24 @@ It groups by K and plots mean ± std-across-folds for every method present
 claim is meta reaching SVR's asymptotic accuracy at a **smaller K** (fewer
 calibration points), and `meta_adv` undercutting both.
 
+**Statistical significance markers** (`--sig-pair m1:m2`, repeatable). Each
+`(fold, seed)` row gives one paired observation, so a per-K **paired
+Wilcoxon signed-rank test** tests whether two methods' errors differ
+significantly across the combined fold-and-seed sample. Stars are drawn
+above the winning curve (`*` p<0.05, `**` p<0.01, `***` p<0.001) at each K
+where the test passes, and the full p-value table is printed to stdout:
+
+```bash
+python -m vit_gaze.plot_metacompare --csv metacompare.csv --out kcurve.png \
+  --sig-pair meta:svr --sig-pair meta:fc_ft --sig-pair meta_adv:meta
+```
+
+The `scripts/plot_metacompare.sh` wrapper runs those three tests by default
+(`SIG_PAIRS` env var). Wilcoxon requires `scipy`; if it's not installed the
+plot is rendered without stars and a notice is printed. The test needs at
+least 6 paired observations per K to run, so with a single seed it'll work
+once you have enough folds; with a `SEEDS` sweep it always has enough.
+
 ### Per-fold / K-sweep tables (`pivot_metacompare`)
 
 The companion script renders the same CSV into the condensed tables that
