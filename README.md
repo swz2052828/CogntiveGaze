@@ -391,6 +391,30 @@ It groups by K and plots mean ± std-across-folds for every method present
 claim is meta reaching SVR's asymptotic accuracy at a **smaller K** (fewer
 calibration points), and `meta_adv` undercutting both.
 
+### Per-fold / K-sweep tables (`pivot_metacompare`)
+
+The companion script renders the same CSV into the condensed tables that
+sit next to the K-sweep figure in a paper. Three views:
+
+```bash
+# Headline K-sweep table (rows=K, columns=method, cells="mean +/- std" over folds x seeds)
+python -m vit_gaze.pivot_metacompare --csv metacompare.csv \
+  --view summary --format markdown --out tables/summary.md
+
+# Per-fold breakdown at a fixed K (surfaces fold 2 as the hard one)
+python -m vit_gaze.pivot_metacompare --csv metacompare.csv \
+  --view per-fold --k 16 --format markdown --out tables/per_fold_K16.md
+
+# Transposed K-sweep: rows=method, columns=K -- easier to scan when comparing methods
+python -m vit_gaze.pivot_metacompare --csv metacompare.csv \
+  --view per-method --format latex --out tables/per_method.tex
+```
+
+Formats: `csv` (machine-readable), `markdown` (paste into a draft), `latex`
+(booktabs `tabular`). With a `SEEDS=...` sweep the cells aggregate over both
+folds and seeds automatically; with a single seed they aggregate over folds
+only.
+
 ### One-button driver: `scripts/meta_pipeline.sbatch`
 
 For the full experiment, submit the driver as a 5-fold Slurm array — each
