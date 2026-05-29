@@ -218,10 +218,16 @@ full fused feature the head reads.
   scenario, optimized end to end (ANIL + FOMAML; Raghu 2020 / Finn 2017).
 - **Encoder frozen** (ANIL), so the fused feature is constant per frame and is
   **cached once per fold** — meta-training runs on cached `[N, dim]` tensors
-  with no ViT in the loop (fast even on the 2070 Super).
-- Meta-learned parameters: the shared gaze **head** + the **adapter init**.
+  with no backbone in the loop (fast even on the 2070 Super).
+- Meta-learned parameters: the shared gaze **readout** + the **adapter init**.
   The inner loop adapts only the adapter; the outer loop (first-order)
   minimizes post-adaptation query loss.
+- **Works on every multistream backbone**, not just `vit`. All five expose
+  `forward_features` (the fused vector feeding their final readout — `.head`
+  for `vit`, `.fc` for the CNN baselines), and the adapter dimension is
+  inferred from the cached features automatically. The four CNN backbones
+  require `--use-grid` (as in normal training). Pick the backbone with
+  `--backbone {vit,itracker,mobilenet_v3,affnet,mgazenet}`.
 
 Adapters (`--adapter`):
 - **`film`** (default) — per-subject `γ,β` scale+shift on the fused feature

@@ -144,13 +144,14 @@ class MetaViTGazeExporter:
        adapter; the head and encoder are unchanged.
 
     Writes the same per-recording file format as ``ViTGazeExporter`` so analyzers
-    consume the output unchanged. Multistream + a backbone exposing
-    ``forward_features`` (currently vit) only.
+    consume the output unchanged. Works for any multistream backbone that
+    implements ``forward_features`` (all five: vit + the four CNN baselines).
     """
 
     def __init__(self, checkpoint_path, device=None, inner_steps=None, inner_lr=None):
         import torch
         from vit_gaze.models import create_model
+        from vit_gaze.multistream_backbones.adapter import MultistreamBackboneBase
         from vit_gaze.multistream_backbones.adapters import make_adapter
 
         self.torch = torch
@@ -168,8 +169,10 @@ class MetaViTGazeExporter:
             grid_size=int(saved.get("grid_size", 25)),
             backbone=str(saved.get("backbone", "vit")),
         ).to(self.device)
-        if not hasattr(self.model, "forward_features"):
-            raise ValueError("Meta enrollment needs forward_features on the backbone.")
+        if type(self.model).forward_features is MultistreamBackboneBase.forward_features:
+            raise ValueError(
+                f"backbone {type(self.model).__name__} does not implement "
+                f"forward_features; meta enrollment is unsupported for it.")
         self.model.load_state_dict(ckpt["model"])
         self.model.eval()
 
@@ -214,7 +217,7 @@ class MetaViTGazeExporter:
                   for p in self.adapter_template.parameters()]
         y_sup = normalize_gaze(gazes_sup, self.gaze_mean, self.gaze_std)
         for _ in range(self.inner_steps):
-            pred = self.model.head(self.adapter_template.func(feats_sup, params))
+            pred = self.model.readout(self.adapter_template.func(feats_sup, params))
             loss = F.smooth_l1_loss(pred, y_sup)
             grads = torch.autograd.grad(loss, params)
             params = [(p - self.inner_lr * g).detach().requires_grad_(True)
@@ -239,7 +242,7 @@ class MetaViTGazeExporter:
             feats_qry, gazes_qry = self._cache_features(dataset, qry_idx, batch_size, num_workers)
             with torch.no_grad():
                 pred = denormalize_gaze(
-                    self.model.head(self.adapter_template.func(feats_qry, params)).float(),
+                    self.model.readout(self.adapter_template.func(feats_qry, params)).float(),
                     self.gaze_mean, self.gaze_std,
                 ).cpu().numpy()
             gt = gazes_qry.cpu().numpy()

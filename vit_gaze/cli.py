@@ -236,8 +236,13 @@ def build_parser():
     meta_parser.add_argument("--out-path", default="./vit_gaze_meta_output")
     meta_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
     meta_parser.add_argument(
-        "--backbone", choices=("vit",), default="vit",
-        help="Only backbones exposing forward_features are supported (vit).",
+        "--backbone",
+        choices=("vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        default="vit",
+        help="All multistream backbones expose forward_features and are "
+             "supported. The CNN baselines (itracker/mobilenet_v3/affnet/"
+             "mgazenet) require --use-grid. Use --init-checkpoint to start from "
+             "a trained encoder (the frozen encoder is otherwise un-tuned).",
     )
     meta_parser.add_argument("--weights", choices=("none", "imagenet"), default="imagenet")
     meta_parser.add_argument("--freeze-encoder", action="store_true")

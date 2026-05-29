@@ -30,9 +30,18 @@ from . import accel
 from .calibration import SVRCalibrator
 from .dataset import build_multistream_dataset
 from .models import batch_multistream_for_mode, create_model
+from .multistream_backbones.adapter import MultistreamBackboneBase
 from .multistream_backbones.adapters import make_adapter
 from .splits import recording_kfolds, select_splits
 from .training import denormalize_gaze, log, normalize_gaze
+
+
+def _require_meta_support(model):
+    if type(model).forward_features is MultistreamBackboneBase.forward_features:
+        raise ValueError(
+            f"backbone {type(model).__name__} does not implement forward_features; "
+            f"it cannot be used with the meta-learned calibration path.")
+    return model
 
 
 def metacompare(args):
@@ -93,8 +102,7 @@ def _load_meta_checkpoint(path, device):
         grid_size=int(saved.get("grid_size", 25)),
         backbone=str(saved.get("backbone", "vit")),
     ).to(device)
-    if not hasattr(model, "forward_features"):
-        raise ValueError("metacompare needs a backbone with forward_features (vit).")
+    _require_meta_support(model)
     model.load_state_dict(ckpt["model"])
     model.eval()
     adapter = make_adapter(
@@ -118,8 +126,7 @@ def _load_base_checkpoint(path, device):
         grid_size=int(saved.get("grid_size", 25)),
         backbone=str(saved.get("backbone", "vit")),
     ).to(device)
-    if not hasattr(model, "forward_features"):
-        raise ValueError("metacompare needs a backbone with forward_features (vit).")
+    _require_meta_support(model)
     model.load_state_dict(ckpt["model"])
     model.eval()
     return model, ckpt["gaze_mean"].to(device), ckpt["gaze_std"].to(device)
@@ -137,7 +144,7 @@ def _features_and_preds(model, dataset, indices, gaze_mean, gaze_std,
         inputs = batch_multistream_for_mode(batch, device)
         f = model.forward_features(
             inputs["face"], inputs["eye_left"], inputs["eye_right"], inputs.get("grid"))
-        p_norm = model.head(f).float()
+        p_norm = model.readout(f).float()
         p = denormalize_gaze(p_norm, gaze_mean, gaze_std)
         feats.append(f.float().cpu())
         gazes.append(batch["gaze"])
@@ -148,7 +155,7 @@ def _features_and_preds(model, dataset, indices, gaze_mean, gaze_std,
 def _adapt_meta(model, adapter, init_params, f_sup, y_sup, inner_lr, inner_steps):
     fast = [p.detach().clone().requires_grad_(True) for p in init_params]
     for _ in range(inner_steps):
-        pred = model.head(adapter.func(f_sup, fast))
+        pred = model.readout(adapter.func(f_sup, fast))
         loss = F.smooth_l1_loss(pred, y_sup)
         grads = torch.autograd.grad(loss, fast)
         fast = [(p - inner_lr * g).detach().requires_grad_(True)
@@ -166,7 +173,7 @@ def _meta_predict(bundle, sup_rows, qry_rows, gazes, device, inner_lr, inner_ste
     fast = _adapt_meta(model, adapter, init_params, f_sup, y_sup, inner_lr, inner_steps)
     with torch.no_grad():
         return denormalize_gaze(
-            model.head(adapter.func(f_qry, fast)).float(), mean, std).cpu().numpy()
+            model.readout(adapter.func(f_qry, fast)).float(), mean, std).cpu().numpy()
 
 
 def _compare_one_fold(args, dataset, split, device):

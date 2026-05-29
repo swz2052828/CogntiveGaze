@@ -179,7 +179,7 @@ class AFFNetMultistream(MultistreamBackboneBase):
             nn.Linear(128, 2),
         )
 
-    def forward(self, face, eye_left, eye_right, grid=None):
+    def forward_features(self, face, eye_left, eye_right, grid=None):
         if grid is None:
             raise ValueError("AFFNetMultistream requires --use-grid.")
         x_face = self.face_model(face)
@@ -195,5 +195,7 @@ class AFFNetMultistream(MultistreamBackboneBase):
         x_eyes = x_eyes.view(x_eyes.size(0), -1)
         x_eyes = self.eyes_fc(x_eyes)
 
-        feature = torch.cat([x_eyes, x_face, x_rect], dim=1)
-        return self.fc(feature)
+        return torch.cat([x_eyes, x_face, x_rect], dim=1)
+
+    def forward(self, face, eye_left, eye_right, grid=None):
+        return self.fc(self.forward_features(face, eye_left, eye_right, grid))

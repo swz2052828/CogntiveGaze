@@ -11,11 +11,13 @@ is meant to be compared head-to-head with (and on top of) SVR.
 Method (ANIL; Raghu et al. 2020 + FOMAML; Finn et al. 2017):
 * Each recording is a task. An episode splits a recording into a support set
   (K calibration frames) and a query set (the rest).
-* The ViT encoder is frozen, so the fused per-stream feature
-  (``model.forward_features``) is constant per frame -- we cache it once per
-  fold and meta-train purely on cached ``[N, dim]`` features (no ViT in the
-  loop). The meta-learned parameters are the shared gaze *head* and the
-  *adapter init* (FiLM or LoRA).
+* The encoder (everything before the readout) is frozen, so the fused
+  per-stream feature (``model.forward_features``) is constant per frame -- we
+  cache it once per fold and meta-train purely on cached ``[N, dim]`` features
+  (no backbone in the loop). Works for any multistream backbone that
+  implements ``forward_features`` (all five: vit + the four CNN baselines).
+  The meta-learned parameters are the shared gaze *readout* and the *adapter
+  init* (FiLM or LoRA).
 * Inner loop: from the adapter init, take a few SGD steps on the support set
   (only the adapter moves). Outer loop (first-order): minimize the post-
   adaptation query loss w.r.t. the head and the adapter init.
@@ -34,6 +36,7 @@ import torch.utils.data as data
 from . import accel
 from .dataset import build_multistream_dataset
 from .models import batch_multistream_for_mode, create_model
+from .multistream_backbones.adapter import MultistreamBackboneBase
 from .multistream_backbones.adapters import make_adapter
 from .splits import recording_kfolds, select_splits
 from .training import denormalize_gaze, log, normalize_gaze
@@ -85,10 +88,10 @@ def _build_base_model(args, device):
         grid_size=getattr(args, "grid_size", 25),
         backbone=getattr(args, "backbone", "vit"),
     ).to(device)
-    if not hasattr(model, "forward_features"):
+    if not _supports_meta(model):
         raise ValueError(
-            f"--backbone {getattr(args, 'backbone', 'vit')} does not expose "
-            f"forward_features; metatrain needs it (use --backbone vit)."
+            f"--backbone {getattr(args, 'backbone', 'vit')} does not implement "
+            f"forward_features; metatrain needs it."
         )
     if getattr(args, "init_checkpoint", None):
         ckpt = torch.load(args.init_checkpoint, map_location=device)
@@ -96,10 +99,18 @@ def _build_base_model(args, device):
         missing, unexpected = model.load_state_dict(state, strict=False)
         log(f"Loaded init checkpoint {args.init_checkpoint} "
             f"(missing={len(missing)} unexpected={len(unexpected)})")
-    # Freeze the encoder explicitly; only the head + adapter init are meta-learned.
-    for p in model.encoder.parameters():
-        p.requires_grad = False
+    # ANIL: freeze everything except the readout so the fused features are
+    # constant per frame (cacheable) and only the readout + adapter init are
+    # meta-learned. Generalizes the ViT-specific encoder freeze to any backbone.
+    readout_params = set(model.readout.parameters())
+    for p in model.parameters():
+        p.requires_grad = p in readout_params
     return model
+
+
+def _supports_meta(model):
+    """True if the backbone overrides forward_features (i.e. opts into meta)."""
+    return type(model).forward_features is not MultistreamBackboneBase.forward_features
 
 
 @torch.no_grad()
@@ -143,7 +154,7 @@ def _inner_adapt(model, adapter, init_params, f_sup, y_sup, inner_lr, inner_step
     """
     fast = [p.detach().clone().requires_grad_(True) for p in init_params]
     for _ in range(inner_steps):
-        pred = model.head(adapter.func(f_sup, fast))
+        pred = model.readout(adapter.func(f_sup, fast))
         loss = F.smooth_l1_loss(pred, y_sup)
         grads = torch.autograd.grad(loss, fast)
         fast = [(w - inner_lr * g).detach().requires_grad_(True)
@@ -174,7 +185,7 @@ def _meta_one_fold(args, dataset, split, device):
         args.adapter, dim, rank=getattr(args, "lora_rank", 8),
         alpha=getattr(args, "lora_alpha", 8.0)).to(device)
 
-    meta_params = list(model.head.parameters()) + list(adapter.parameters())
+    meta_params = list(model.readout.parameters()) + list(adapter.parameters())
     meta_opt = torch.optim.AdamW(meta_params, lr=args.outer_lr)
 
     tr_rows = _rec_to_rows(tr_recs)
@@ -207,7 +218,7 @@ def _meta_one_fold(args, dataset, split, device):
             fast = _inner_adapt(model, adapter, list(adapter.parameters()),
                                 f_sup, y_sup, args.inner_lr, args.inner_steps)
             fast_leaf = [w.detach().requires_grad_(True) for w in fast]
-            pred_q = model.head(adapter.func(f_qry, fast_leaf))
+            pred_q = model.readout(adapter.func(f_qry, fast_leaf))
             loss_q = F.smooth_l1_loss(pred_q, y_qry) / len(tasks)
             loss_q.backward()  # head grads accumulate; fast_leaf.grad set
             for acc, fl in zip(adapter_grad, fast_leaf):
@@ -254,14 +265,14 @@ def _meta_eval(args, model, adapter, feats, gazes, recs, gaze_mean, gaze_std, de
         # pre-adaptation: adapter at meta-learned init (identity-ish)
         with torch.no_grad():
             pred_pre = denormalize_gaze(
-                model.head(adapter(f_qry)).float(), gaze_mean, gaze_std)
+                model.readout(adapter(f_qry)).float(), gaze_mean, gaze_std)
             pre_errors.append(torch.linalg.norm(pred_pre - g_qry, dim=1).mean().item())
 
         fast = _inner_adapt(model, adapter, list(adapter.parameters()),
                             f_sup, y_sup, args.inner_lr, steps)
         with torch.no_grad():
             pred_post = denormalize_gaze(
-                model.head(adapter.func(f_qry, fast)).float(), gaze_mean, gaze_std)
+                model.readout(adapter.func(f_qry, fast)).float(), gaze_mean, gaze_std)
             post_errors.append(torch.linalg.norm(pred_post - g_qry, dim=1).mean().item())
 
     pre = sum(pre_errors) / max(1, len(pre_errors))
