@@ -142,7 +142,7 @@ class SubjectAdversary:
                 inputs.get("grid"),
             )
             self._captured = fused
-            return self._inner.head(fused)
+            return self._inner.readout(fused)
         return model(
             inputs["face"], inputs["eye_left"], inputs["eye_right"],
             inputs.get("grid"),
