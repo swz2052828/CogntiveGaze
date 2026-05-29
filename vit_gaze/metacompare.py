@@ -358,9 +358,9 @@ def _append_csv(path, row, args):
     with path.open("a", newline="") as f:
         w = csv.writer(f)
         if new:
-            w.writerow(["fold", "K", "trials", "inner_steps", "inner_lr",
+            w.writerow(["fold", "seed", "K", "trials", "inner_steps", "inner_lr",
                         "svr_C", "base", "svr", "svr_embed", "fc_ft", "meta", "meta_adv"])
-        w.writerow([row["fold"], args.k, args.trials, args.inner_steps, args.inner_lr,
+        w.writerow([row["fold"], args.seed, args.k, args.trials, args.inner_steps, args.inner_lr,
                     args.svr_C, row["base"], row["svr"],
                     row.get("svr_embed", float("nan")),
                     row.get("fc_ft", float("nan")), row["meta"],

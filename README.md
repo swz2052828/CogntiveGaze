@@ -417,6 +417,22 @@ EPOCHS=30,ADV_WEIGHT=0.05,K_SWEEP='8 16 32 64' \
   scripts/meta_pipeline.sbatch
 ```
 
+**Seed sweep** (the right way to get honest error bars): set `SEEDS` to a
+space-separated list. The driver loops the full per-fold pipeline once per
+seed, each seed gets its own checkpoint namespace
+(`$OUT_ROOT/<stage>/seed<N>/...`), and the shared `metacompare.csv` gains a
+`seed` column. The plotter aggregates over **(folds × seeds)** automatically,
+so error bands reflect run-to-run noise as well as fold-to-fold spread:
+
+```bash
+sbatch --array=0-4 --export=ALL,SEEDS='42 123 7' scripts/meta_pipeline.sbatch
+```
+
+Cost scales linearly with the number of seeds. Two seeds is enough to detect
+whether a per-fold delta is signal or noise (we observed up to ~1 cm
+per-fold drift on the MobileNetV3 baseline between two runs of the same
+code); three is what you'd report in a paper.
+
 ### Writing the log to a file
 
 By default the per-batch / per-epoch / accel log lines go to stdout. Pass

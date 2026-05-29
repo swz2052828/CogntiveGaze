@@ -57,6 +57,7 @@ set -euo pipefail
 : "${ADAPTER:=film}"
 : "${K_SWEEP:=4 8 16 32 64}"
 : "${TRIALS:=5}"
+: "${SEEDS:=42}"          # space-separated; multiple values trigger a seed sweep
 : "${SVR_C:=1.0}"
 : "${SVR_GAMMA:=scale}"
 : "${SVR_EPS:=0.1}"
@@ -81,135 +82,149 @@ META_ADV_DIR="$OUT_ROOT/meta_on_adv"
 LOG_DIR="$OUT_ROOT/logs"
 mkdir -p "$BASE_DIR" "$ADV_DIR" "$META_DIR" "$META_ADV_DIR" "$LOG_DIR" logs
 
-BASE_CKPT="$BASE_DIR/fold${FOLD}_best_${BACKBONE}_gaze_segmenter.pth"
-ADV_CKPT="$ADV_DIR/fold${FOLD}_best_${BACKBONE}_gaze_segmenter.pth"
-META_CKPT="$META_DIR/fold${FOLD}_meta_${ADAPTER}_${BACKBONE}_gaze.pth"
-META_ADV_CKPT="$META_ADV_DIR/fold${FOLD}_meta_${ADAPTER}_${BACKBONE}_gaze.pth"
-CSV_OUT="$OUT_ROOT/metacompare.csv"   # one shared CSV, all folds * all K append
-
+CSV_OUT="$OUT_ROOT/metacompare.csv"   # one shared CSV, all folds * all K * all seeds append
 CLI="python vit_gaze_segmenter.py"
 COMMON_DATA="--data-path $DATA_PATH --eye-path $EYE_PATH --input-mode multistream --backbone $BACKBONE --use-grid"
-COMMON_TRAIN="$COMMON_DATA --weights imagenet --epochs $EPOCHS --batch-size $BATCH_SIZE \
-  --num-workers $NUM_WORKERS --lr $LR --lr-scheduler $LR_SCHEDULER --augment $AUGMENT \
-  --patience $PATIENCE --min-delta $MIN_DELTA --amp --fold-index $FOLD"
 
-# ---- stage 1: base train -----------------------------------------------------
-if [[ -f "$BASE_CKPT" ]]; then
-  echo "[fold $FOLD] stage 1 base train: skip ($BASE_CKPT exists)"
-else
-  echo "[fold $FOLD] stage 1 base train"
-  $CLI train $COMMON_TRAIN --out-path "$BASE_DIR" \
-    --log-file "$LOG_DIR/base_fold${FOLD}.log"
-fi
+# Seed loop: each seed gets its own checkpoint namespace so its base / adv /
+# meta artifacts don't collide; the metacompare CSV grows a `seed` column so the
+# plotter aggregates over (folds x seeds) for honest error bars.
+for SEED in $SEEDS; do
+  SEED_BASE_DIR="$BASE_DIR/seed${SEED}"
+  SEED_ADV_DIR="$ADV_DIR/seed${SEED}"
+  SEED_META_DIR="$META_DIR/seed${SEED}"
+  SEED_META_ADV_DIR="$META_ADV_DIR/seed${SEED}"
+  mkdir -p "$SEED_BASE_DIR" "$SEED_ADV_DIR" "$SEED_META_DIR" "$SEED_META_ADV_DIR"
 
-# ---- stage 2: subject-adv train ---------------------------------------------
-if [[ -f "$ADV_CKPT" ]]; then
-  echo "[fold $FOLD] stage 2 adv train: skip ($ADV_CKPT exists)"
-else
-  echo "[fold $FOLD] stage 2 adv train"
-  $CLI train $COMMON_TRAIN --out-path "$ADV_DIR" \
-    --subject-adv --adv-weight $ADV_WEIGHT \
-    --log-file "$LOG_DIR/adv_fold${FOLD}.log"
-fi
+  BASE_CKPT="$SEED_BASE_DIR/fold${FOLD}_best_${BACKBONE}_gaze_segmenter.pth"
+  ADV_CKPT="$SEED_ADV_DIR/fold${FOLD}_best_${BACKBONE}_gaze_segmenter.pth"
+  META_CKPT="$SEED_META_DIR/fold${FOLD}_meta_${ADAPTER}_${BACKBONE}_gaze.pth"
+  META_ADV_CKPT="$SEED_META_ADV_DIR/fold${FOLD}_meta_${ADAPTER}_${BACKBONE}_gaze.pth"
 
-# ---- stage 3: metatrain on BASE ---------------------------------------------
-if [[ -f "$META_CKPT" ]]; then
-  echo "[fold $FOLD] stage 3 metatrain (on base): skip ($META_CKPT exists)"
-else
-  echo "[fold $FOLD] stage 3 metatrain (on base)"
-  $CLI metatrain $COMMON_DATA --weights imagenet \
-    --init-checkpoint "$BASE_CKPT" \
-    --adapter $ADAPTER \
-    --meta-support $META_SUPPORT --meta-query $META_QUERY \
-    --inner-steps $INNER_STEPS --inner-lr $INNER_LR \
-    --meta-iters $META_ITERS \
-    --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
-    --fold-index $FOLD --out-path "$META_DIR" \
-    --log-file "$LOG_DIR/meta_on_base_fold${FOLD}.log"
-fi
+  COMMON_TRAIN="$COMMON_DATA --weights imagenet --epochs $EPOCHS --batch-size $BATCH_SIZE \
+    --num-workers $NUM_WORKERS --lr $LR --lr-scheduler $LR_SCHEDULER --augment $AUGMENT \
+    --patience $PATIENCE --min-delta $MIN_DELTA --amp --fold-index $FOLD --seed $SEED"
 
-# ---- stage 4: metatrain on ADV ----------------------------------------------
-if [[ -f "$META_ADV_CKPT" ]]; then
-  echo "[fold $FOLD] stage 4 metatrain (on adv): skip ($META_ADV_CKPT exists)"
-else
-  echo "[fold $FOLD] stage 4 metatrain (on adv)"
-  $CLI metatrain $COMMON_DATA --weights imagenet \
-    --init-checkpoint "$ADV_CKPT" \
-    --adapter $ADAPTER \
-    --meta-support $META_SUPPORT --meta-query $META_QUERY \
-    --inner-steps $INNER_STEPS --inner-lr $INNER_LR \
-    --meta-iters $META_ITERS \
-    --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
-    --fold-index $FOLD --out-path "$META_ADV_DIR" \
-    --log-file "$LOG_DIR/meta_on_adv_fold${FOLD}.log"
-fi
+  echo "=========================================================="
+  echo "[fold $FOLD seed $SEED] starting full pipeline"
+  echo "=========================================================="
 
-# ---- stage 5a: PSO HP search for the prediction-space SVR baseline ----------
-SVR_HP_JSON="$OUT_ROOT/svr_hp_fold${FOLD}.json"
-if [[ "$SVR_TUNE" == "1" ]]; then
-  if [[ -f "$SVR_HP_JSON" ]]; then
-    echo "[fold $FOLD] stage 5a svrsearch (prediction): skip ($SVR_HP_JSON exists)"
+  # ---- stage 1: base train ---------------------------------------------------
+  if [[ -f "$BASE_CKPT" ]]; then
+    echo "[fold $FOLD seed $SEED] stage 1 base train: skip ($BASE_CKPT exists)"
   else
-    echo "[fold $FOLD] stage 5a svrsearch (prediction-space PSO)"
-    $CLI svrsearch $COMMON_DATA \
-      --base-checkpoint "$BASE_CKPT" --space prediction \
-      --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
-      --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
-      --fold-index $FOLD --json-out "$SVR_HP_JSON" \
-      --log-file "$LOG_DIR/svrsearch_fold${FOLD}.log"
+    echo "[fold $FOLD seed $SEED] stage 1 base train"
+    $CLI train $COMMON_TRAIN --out-path "$SEED_BASE_DIR" \
+      --log-file "$LOG_DIR/base_seed${SEED}_fold${FOLD}.log"
   fi
-  read SVR_C SVR_GAMMA SVR_EPS < <(python -c "
+
+  # ---- stage 2: subject-adv train -------------------------------------------
+  if [[ -f "$ADV_CKPT" ]]; then
+    echo "[fold $FOLD seed $SEED] stage 2 adv train: skip ($ADV_CKPT exists)"
+  else
+    echo "[fold $FOLD seed $SEED] stage 2 adv train"
+    $CLI train $COMMON_TRAIN --out-path "$SEED_ADV_DIR" \
+      --subject-adv --adv-weight $ADV_WEIGHT \
+      --log-file "$LOG_DIR/adv_seed${SEED}_fold${FOLD}.log"
+  fi
+
+  # ---- stage 3: metatrain on BASE -------------------------------------------
+  if [[ -f "$META_CKPT" ]]; then
+    echo "[fold $FOLD seed $SEED] stage 3 metatrain (on base): skip ($META_CKPT exists)"
+  else
+    echo "[fold $FOLD seed $SEED] stage 3 metatrain (on base)"
+    $CLI metatrain $COMMON_DATA --weights imagenet \
+      --init-checkpoint "$BASE_CKPT" --adapter $ADAPTER \
+      --meta-support $META_SUPPORT --meta-query $META_QUERY \
+      --inner-steps $INNER_STEPS --inner-lr $INNER_LR --meta-iters $META_ITERS \
+      --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
+      --fold-index $FOLD --seed $SEED --out-path "$SEED_META_DIR" \
+      --log-file "$LOG_DIR/meta_on_base_seed${SEED}_fold${FOLD}.log"
+  fi
+
+  # ---- stage 4: metatrain on ADV --------------------------------------------
+  if [[ -f "$META_ADV_CKPT" ]]; then
+    echo "[fold $FOLD seed $SEED] stage 4 metatrain (on adv): skip ($META_ADV_CKPT exists)"
+  else
+    echo "[fold $FOLD seed $SEED] stage 4 metatrain (on adv)"
+    $CLI metatrain $COMMON_DATA --weights imagenet \
+      --init-checkpoint "$ADV_CKPT" --adapter $ADAPTER \
+      --meta-support $META_SUPPORT --meta-query $META_QUERY \
+      --inner-steps $INNER_STEPS --inner-lr $INNER_LR --meta-iters $META_ITERS \
+      --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
+      --fold-index $FOLD --seed $SEED --out-path "$SEED_META_ADV_DIR" \
+      --log-file "$LOG_DIR/meta_on_adv_seed${SEED}_fold${FOLD}.log"
+  fi
+
+  # ---- stage 5a: PSO HP search for the prediction-space SVR baseline --------
+  SVR_HP_JSON="$OUT_ROOT/svr_hp_seed${SEED}_fold${FOLD}.json"
+  if [[ "$SVR_TUNE" == "1" ]]; then
+    if [[ -f "$SVR_HP_JSON" ]]; then
+      echo "[fold $FOLD seed $SEED] stage 5a svrsearch (prediction): skip ($SVR_HP_JSON exists)"
+    else
+      echo "[fold $FOLD seed $SEED] stage 5a svrsearch (prediction-space PSO)"
+      $CLI svrsearch $COMMON_DATA \
+        --base-checkpoint "$BASE_CKPT" --space prediction \
+        --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
+        --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
+        --fold-index $FOLD --seed $SEED --json-out "$SVR_HP_JSON" \
+        --log-file "$LOG_DIR/svrsearch_seed${SEED}_fold${FOLD}.log"
+    fi
+    read SVR_C SVR_GAMMA SVR_EPS < <(python -c "
 import json
 hp = json.load(open('$SVR_HP_JSON'))['$FOLD']
 print(hp['C'], hp['gamma'], hp['epsilon'])
 ")
-  echo "[fold $FOLD] tuned SVR (prediction): C=$SVR_C gamma=$SVR_GAMMA epsilon=$SVR_EPS"
-fi
-
-# ---- stage 5b: PSO HP search for the embedding-space SVR baseline -----------
-SVR_EMBED_HP_JSON="$OUT_ROOT/svr_embed_hp_fold${FOLD}.json"
-if [[ "$SVR_EMBED" == "1" && "$SVR_TUNE" == "1" ]]; then
-  if [[ -f "$SVR_EMBED_HP_JSON" ]]; then
-    echo "[fold $FOLD] stage 5b svrsearch (embedding): skip ($SVR_EMBED_HP_JSON exists)"
-  else
-    echo "[fold $FOLD] stage 5b svrsearch (embedding-space PSO, Zhu et al. recipe)"
-    $CLI svrsearch $COMMON_DATA \
-      --base-checkpoint "$BASE_CKPT" --space embedding \
-      --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
-      --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
-      --fold-index $FOLD --json-out "$SVR_EMBED_HP_JSON" \
-      --log-file "$LOG_DIR/svrsearch_embed_fold${FOLD}.log"
+    echo "[fold $FOLD seed $SEED] tuned SVR (prediction): C=$SVR_C gamma=$SVR_GAMMA epsilon=$SVR_EPS"
   fi
-  read SVR_EMBED_C SVR_EMBED_GAMMA SVR_EMBED_EPS < <(python -c "
+
+  # ---- stage 5b: PSO HP search for the embedding-space SVR baseline ---------
+  SVR_EMBED_HP_JSON="$OUT_ROOT/svr_embed_hp_seed${SEED}_fold${FOLD}.json"
+  if [[ "$SVR_EMBED" == "1" && "$SVR_TUNE" == "1" ]]; then
+    if [[ -f "$SVR_EMBED_HP_JSON" ]]; then
+      echo "[fold $FOLD seed $SEED] stage 5b svrsearch (embedding): skip ($SVR_EMBED_HP_JSON exists)"
+    else
+      echo "[fold $FOLD seed $SEED] stage 5b svrsearch (embedding-space PSO, Zhu et al. recipe)"
+      $CLI svrsearch $COMMON_DATA \
+        --base-checkpoint "$BASE_CKPT" --space embedding \
+        --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
+        --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
+        --fold-index $FOLD --seed $SEED --json-out "$SVR_EMBED_HP_JSON" \
+        --log-file "$LOG_DIR/svrsearch_embed_seed${SEED}_fold${FOLD}.log"
+    fi
+    read SVR_EMBED_C SVR_EMBED_GAMMA SVR_EMBED_EPS < <(python -c "
 import json
 hp = json.load(open('$SVR_EMBED_HP_JSON'))['$FOLD']
 print(hp['C'], hp['gamma'], hp['epsilon'])
 ")
-  echo "[fold $FOLD] tuned SVR (embedding): C=$SVR_EMBED_C gamma=$SVR_EMBED_GAMMA epsilon=$SVR_EMBED_EPS"
-fi
+    echo "[fold $FOLD seed $SEED] tuned SVR (embedding): C=$SVR_EMBED_C gamma=$SVR_EMBED_GAMMA epsilon=$SVR_EMBED_EPS"
+  fi
 
-# ---- stage 5c: metacompare K-sweep ------------------------------------------
-echo "[fold $FOLD] stage 5c metacompare K-sweep"
-EXTRA_ARGS=""
-if [[ "$FC_FT" == "1" ]]; then
-  EXTRA_ARGS="$EXTRA_ARGS --fc-ft --fc-ft-steps $FC_FT_STEPS --fc-ft-lr $FC_FT_LR --fc-ft-weight-decay $FC_FT_WD"
-fi
-if [[ "$SVR_EMBED" == "1" ]]; then
-  EXTRA_ARGS="$EXTRA_ARGS --svr-embed --svr-embed-C $SVR_EMBED_C --svr-embed-gamma $SVR_EMBED_GAMMA --svr-embed-eps $SVR_EMBED_EPS"
-fi
-for K in $K_SWEEP; do
-  echo "[fold $FOLD]   K=$K"
-  $CLI metacompare $COMMON_DATA \
-    --base-checkpoint "$BASE_CKPT" \
-    --meta-checkpoint "$META_CKPT" \
-    --meta-adv-checkpoint "$META_ADV_CKPT" \
-    --k $K --trials $TRIALS \
-    --inner-steps $INNER_STEPS --inner-lr $INNER_LR \
-    --svr-C $SVR_C --svr-gamma $SVR_GAMMA --svr-eps $SVR_EPS \
-    $EXTRA_ARGS \
-    --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
-    --fold-index $FOLD --csv-out "$CSV_OUT" \
-    --log-file "$LOG_DIR/metacompare_K${K}_fold${FOLD}.log"
-done
+  # ---- stage 5c: metacompare K-sweep ----------------------------------------
+  echo "[fold $FOLD seed $SEED] stage 5c metacompare K-sweep"
+  EXTRA_ARGS=""
+  if [[ "$FC_FT" == "1" ]]; then
+    EXTRA_ARGS="$EXTRA_ARGS --fc-ft --fc-ft-steps $FC_FT_STEPS --fc-ft-lr $FC_FT_LR --fc-ft-weight-decay $FC_FT_WD"
+  fi
+  if [[ "$SVR_EMBED" == "1" ]]; then
+    EXTRA_ARGS="$EXTRA_ARGS --svr-embed --svr-embed-C $SVR_EMBED_C --svr-embed-gamma $SVR_EMBED_GAMMA --svr-embed-eps $SVR_EMBED_EPS"
+  fi
+  for K in $K_SWEEP; do
+    echo "[fold $FOLD seed $SEED]   K=$K"
+    $CLI metacompare $COMMON_DATA \
+      --base-checkpoint "$BASE_CKPT" \
+      --meta-checkpoint "$META_CKPT" \
+      --meta-adv-checkpoint "$META_ADV_CKPT" \
+      --k $K --trials $TRIALS \
+      --inner-steps $INNER_STEPS --inner-lr $INNER_LR \
+      --svr-C $SVR_C --svr-gamma $SVR_GAMMA --svr-eps $SVR_EPS \
+      $EXTRA_ARGS \
+      --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
+      --fold-index $FOLD --seed $SEED --csv-out "$CSV_OUT" \
+      --log-file "$LOG_DIR/metacompare_K${K}_seed${SEED}_fold${FOLD}.log"
+  done
 
-echo "[fold $FOLD] done. CSV: $CSV_OUT"
+  echo "[fold $FOLD seed $SEED] done."
+done   # end seed loop
+
+echo "[fold $FOLD] all seeds done. CSV: $CSV_OUT"

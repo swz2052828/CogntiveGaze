@@ -52,6 +52,10 @@ def plot(csv_paths, out_path, title=None):
     df = _load(csv_paths)
     methods = [m for m in _METHODS if m in df.columns and df[m].notna().any()]
     ks = sorted(df["K"].unique())
+    # Aggregate over all (fold, seed) rows at a given K. If only one seed was run
+    # std-bands reflect across-fold spread; with a seed sweep they also include
+    # seed-to-seed noise -- the honest error bars for the headline figure.
+    seed_aware = "seed" in df.columns and df["seed"].nunique() > 1
 
     fig, ax = plt.subplots(figsize=(7, 5))
     for m in methods:
@@ -67,7 +71,8 @@ def plot(csv_paths, out_path, title=None):
 
     ax.set_xlabel("Calibration frames K")
     ax.set_ylabel("Mean gaze error (cm)")
-    ax.set_title(title or "Calibration error vs. number of calibration frames")
+    suffix = " (mean +/- std across folds x seeds)" if seed_aware else " (mean +/- std across folds)"
+    ax.set_title((title or "Calibration error vs. number of calibration frames") + suffix)
     ax.set_xscale("log", base=2)
     ax.set_xticks(ks)
     ax.get_xaxis().set_major_formatter(mticker.ScalarFormatter())
