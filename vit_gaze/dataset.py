@@ -321,9 +321,14 @@ class MultiStreamGazeDataset(data.Dataset):
 
 
 def make_augment_transform(level, image_size):
-    """Return a torchvision Compose transform for the given augmentation level, or None.
+    """Return a transform that augments the loaded crops, or None.
 
-    Designed for normalized CHW float tensors from _load_image_cv2.
+    ``_load_image_cv2`` returns a tensor that is already ImageNet-normalized
+    (values ~[-2.5, 2.5]). torchvision colour ops (ColorJitter, Grayscale)
+    require [0, 1]-valued input, so the returned transform un-normalizes,
+    augments in [0, 1] space, then re-normalizes -- preserving the contract
+    that downstream code expects ImageNet-normalized tensors.
+
     NO horizontal flip: gaze labels are screen-relative; mirroring the image
     without mirroring the gaze target would corrupt training signal.
     """
@@ -331,17 +336,30 @@ def make_augment_transform(level, image_size):
     if not level or level == "none":
         return None
     if level == "light":
-        return T.Compose([
+        ops = [
             T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
             T.RandomResizedCrop(image_size, scale=(0.90, 1.0), ratio=(1.0, 1.0)),
-        ])
-    if level == "medium":
-        return T.Compose([
+        ]
+    elif level == "medium":
+        ops = [
             T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
             T.RandomResizedCrop(image_size, scale=(0.85, 1.0), ratio=(1.0, 1.0)),
             T.RandomGrayscale(p=0.05),
-        ])
-    raise ValueError(f"Unknown augmentation level: {level!r}. Choose none/light/medium.")
+        ]
+    else:
+        raise ValueError(f"Unknown augmentation level: {level!r}. Choose none/light/medium.")
+
+    mean = IMAGENET_MEAN
+    std = IMAGENET_STD
+    inner = T.Compose(ops)
+
+    def _augment(normalized):
+        # un-normalize -> [0, 1], augment in colour-correct domain, re-normalize.
+        x = normalized * std + mean
+        x = inner(x.clamp(0.0, 1.0))
+        return (x - mean) / std
+
+    return _augment
 
 
 class AugmentedSubset(data.Dataset):
