@@ -77,6 +77,13 @@ def add_common_args(parser):
     )
 
 
+def _gamma_arg(s):
+    """argparse type for SVR gamma: accept 'scale' / 'auto' or a float."""
+    if s in ("scale", "auto"):
+        return s
+    return float(s)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -312,7 +319,17 @@ def build_parser():
     cmp_parser.add_argument("--inner-lr", type=float, default=1e-2)
     cmp_parser.add_argument("--svr-C", type=float, default=1.0)
     cmp_parser.add_argument("--svr-eps", type=float, default=0.1)
-    cmp_parser.add_argument("--svr-gamma", default="scale")
+    cmp_parser.add_argument("--svr-gamma", type=_gamma_arg, default="scale")
+    cmp_parser.add_argument(
+        "--svr-embed", action="store_true",
+        help="Enable the SVR-on-embeddings baseline (Zhu et al.'s actual "
+             "calibration recipe): per subject, fit two RBF-SVRs from the K "
+             "support fused features to (x, y), predict on the query features. "
+             "Replaces the readout entirely with a per-subject SVR.",
+    )
+    cmp_parser.add_argument("--svr-embed-C", type=float, default=1.0)
+    cmp_parser.add_argument("--svr-embed-eps", type=float, default=0.1)
+    cmp_parser.add_argument("--svr-embed-gamma", type=_gamma_arg, default="scale")
     cmp_parser.add_argument(
         "--fc-ft", action="store_true",
         help="Enable the head-only fine-tune baseline (Zhu et al. style): per "
@@ -346,6 +363,13 @@ def build_parser():
     add_common_args(svr_parser)
     svr_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
     svr_parser.add_argument("--base-checkpoint", required=True)
+    svr_parser.add_argument(
+        "--space", choices=("prediction", "embedding"), default="prediction",
+        help="Which SVR baseline to tune. prediction (default) tunes our "
+             "correction-style SVR ((pred_xy)->(true_xy)); embedding tunes the "
+             "Zhu et al.-style SVR ((fused_feature)->coord), which replaces the "
+             "readout. Use embedding for --svr-embed in metacompare.",
+    )
     svr_parser.add_argument("--k", type=int, default=16,
                             help="Calibration frames per subject during HP search.")
     svr_parser.add_argument("--trials", type=int, default=3,

@@ -87,33 +87,45 @@ def pso(fitness, lb, ub, pop=30, iters=50, w=0.7, c1=1.5, c2=1.5, seed=0,
 
 
 @torch.no_grad()
-def _cache_base_preds(model, dataset, indices, gaze_mean, gaze_std,
-                      device, batch_size, num_workers):
-    """Return (preds[N,2], gazes[N,2], recs[N]) for `indices`, all CPU."""
+def _cache(model, dataset, indices, gaze_mean, gaze_std, device,
+           batch_size, num_workers, want_features):
+    """Cache (X, gazes, recs) for ``indices``.
+
+    ``X`` is either the model's predicted xy (prediction space) or the fused
+    feature (embedding space), depending on ``want_features``.
+    """
     loader = data.DataLoader(
         data.Subset(dataset, list(indices)), batch_size=batch_size, shuffle=False,
         num_workers=num_workers, pin_memory=torch.cuda.is_available())
-    preds, gazes, recs = [], [], []
+    xs, gazes, recs = [], [], []
     for batch in loader:
         inputs = batch_multistream_for_mode(batch, device)
         f = model.forward_features(
             inputs["face"], inputs["eye_left"], inputs["eye_right"], inputs.get("grid"))
-        p = denormalize_gaze(model.readout(f).float(), gaze_mean, gaze_std)
-        preds.append(p.cpu())
+        if want_features:
+            xs.append(f.float().cpu())
+        else:
+            p = denormalize_gaze(model.readout(f).float(), gaze_mean, gaze_std)
+            xs.append(p.cpu())
         gazes.append(batch["gaze"])
         recs.append(batch["rec"])
-    return torch.cat(preds).numpy(), torch.cat(gazes).numpy(), torch.cat(recs).numpy()
+    return torch.cat(xs).numpy(), torch.cat(gazes).numpy(), torch.cat(recs).numpy()
 
 
-def _make_fitness(preds_by_rec, gazes_by_rec, k, trials, seed):
-    """Mean Euclidean error across recordings x trials for candidate (C, gamma, epsilon)."""
+def _make_fitness(X_by_rec, gazes_by_rec, k, trials, seed):
+    """Mean Euclidean error across recordings x trials for candidate (C, gamma, epsilon).
+
+    ``X_by_rec[rec]`` is the SVR input for that recording -- predicted xy in
+    prediction-space tuning, fused features in embedding-space tuning. The
+    target is always 2D screen coordinates from ``gazes_by_rec``.
+    """
     from sklearn.svm import SVR
     rng = random.Random(seed)
     # Precompute support/query draws so every candidate triple sees identical draws
     # (fair comparison; eliminates per-call sampling variance).
     draws_by_rec = {}
-    for rec, preds in preds_by_rec.items():
-        n = len(preds)
+    for rec, X in X_by_rec.items():
+        n = len(X)
         if n <= k:
             continue
         rows = list(range(n))
@@ -128,13 +140,13 @@ def _make_fitness(preds_by_rec, gazes_by_rec, k, trials, seed):
         C, gamma, epsilon = float(params[0]), float(params[1]), float(params[2])
         errs = []
         for rec, draws in draws_by_rec.items():
-            preds = preds_by_rec[rec]
+            X = X_by_rec[rec]
             gts = gazes_by_rec[rec]
             for sup, qry in draws:
-                svr_x = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(preds[sup], gts[sup, 0])
-                svr_y = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(preds[sup], gts[sup, 1])
-                px = svr_x.predict(preds[qry])
-                py = svr_y.predict(preds[qry])
+                svr_x = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(X[sup], gts[sup, 0])
+                svr_y = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(X[sup], gts[sup, 1])
+                px = svr_x.predict(X[qry])
+                py = svr_y.predict(X[qry])
                 errs.append(float(np.mean(np.sqrt((px - gts[qry, 0]) ** 2 +
                                                   (py - gts[qry, 1]) ** 2))))
         return float(np.mean(errs)) if errs else float("inf")
@@ -175,8 +187,10 @@ def _run_svrsearch(args):
     splits = select_splits(splits_all, args.fold_index)
     model, gaze_mean, gaze_std = _load_base_checkpoint(args.base_checkpoint, device)
 
+    want_features = (getattr(args, "space", "prediction") == "embedding")
     log(f"Device: {device}")
-    log(f"svrsearch K={args.k} trials={args.trials} pop={args.pop} iters={args.iters} "
+    log(f"svrsearch space={'embedding' if want_features else 'prediction'} "
+        f"K={args.k} trials={args.trials} pop={args.pop} iters={args.iters} "
         f"bounds=[{list(DEFAULT_LB)}, {list(DEFAULT_UB)}]")
 
     out = {}
@@ -185,17 +199,18 @@ def _run_svrsearch(args):
         # HP search uses TRAINING-fold subjects only so held-out subjects are never
         # seen by the tuner. Per-fold output: paste into metacompare for the same fold.
         train_idx = dataset.indices_for_recordings(split["train_recordings"])
-        log(f"Fold {fold} caching base preds on {len(split['train_recordings'])} train subjects")
-        preds, gazes, recs = _cache_base_preds(
+        log(f"Fold {fold} caching on {len(split['train_recordings'])} train subjects "
+            f"(space={'embedding' if want_features else 'prediction'})")
+        X, gazes, recs = _cache(
             model, dataset, train_idx, gaze_mean, gaze_std,
-            device, args.batch_size, args.num_workers)
-        preds_by_rec, gazes_by_rec = {}, {}
+            device, args.batch_size, args.num_workers, want_features=want_features)
+        X_by_rec, gazes_by_rec = {}, {}
         for r in np.unique(recs):
             mask = recs == r
-            preds_by_rec[int(r)] = preds[mask]
+            X_by_rec[int(r)] = X[mask]
             gazes_by_rec[int(r)] = gazes[mask]
 
-        fitness = _make_fitness(preds_by_rec, gazes_by_rec,
+        fitness = _make_fitness(X_by_rec, gazes_by_rec,
                                 k=args.k, trials=args.trials, seed=args.seed + fold)
 
         def progress(it, best_f, best_x):
@@ -209,7 +224,8 @@ def _run_svrsearch(args):
         log(f"Fold {fold} done best_err={best_f:.4f} "
             f"C={best_x[0]:.6f} gamma={best_x[1]:.6f} epsilon={best_x[2]:.6f}")
         out[fold] = {"C": float(best_x[0]), "gamma": float(best_x[1]),
-                     "epsilon": float(best_x[2]), "best_err": float(best_f)}
+                     "epsilon": float(best_x[2]), "best_err": float(best_f),
+                     "space": "embedding" if want_features else "prediction"}
 
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(out, indent=2))
@@ -217,5 +233,6 @@ def _run_svrsearch(args):
     # Convenient one-liner the user can paste into a metacompare command:
     if len(out) == 1:
         ((fold, hp),) = out.items()
-        log(f"Fold {fold} paste: --svr-C {hp['C']:.4f} --svr-gamma {hp['gamma']:.6f} "
-            f"--svr-eps {hp['epsilon']:.4f}")
+        prefix = "--svr-embed" if want_features else "--svr"
+        log(f"Fold {fold} paste: {prefix}-C {hp['C']:.4f} {prefix}-gamma {hp['gamma']:.6f} "
+            f"{prefix}-eps {hp['epsilon']:.4f}")

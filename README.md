@@ -317,25 +317,47 @@ python vit_gaze_segmenter.py metacompare ... --fc-ft \
 
 The summary then includes `fc_ft_gain`, `fc_ft_vs_svr`, and `meta_vs_fc_ft`.
 
+**SVR-on-embeddings baseline (`--svr-embed`)** — Zhu et al.'s actual recipe:
+SVR **replaces** the readout. Per support/query draw, fit two RBF-SVRs from
+the K support fused features to `(x, y)`, predict on the query features.
+Reuses the same cached features as every other method:
+
+```bash
+python vit_gaze_segmenter.py metacompare ... --svr-embed \
+  --svr-embed-C 1.0 --svr-embed-gamma scale --svr-embed-eps 0.1 \
+  --base-checkpoint ... --meta-checkpoint ... --k 16
+```
+
+The summary then includes `svr_embed_gain`, `svr_embed_vs_svr`, and
+`meta_vs_svr_embed`. This is the **direct head-to-head against Zhu et al.'s
+SwarmIntelligentCalibration** at matched K and same encoder. Note that at
+small K (e.g. K=4) the feature dim (~2304) >> K, so this method is in the
+underdetermined regime by design — that's part of what the comparison is
+meant to expose.
+
 **Tuned SVR baseline (`svrsearch`)** — sklearn defaults under-tune the SVR;
 the `svrsearch` subcommand runs a swarm-style global search (PSO over
 `(C, gamma, epsilon)`, search bounds matching Zhu et al.) on the **training**
-subjects of each fold and prints the optimal triple for that fold:
+subjects of each fold and prints the optimal triple for that fold. Use
+`--space prediction` (default) to tune the prediction-space SVR, or
+`--space embedding` to tune the Zhu-et-al-style embedding-space SVR:
 
 ```bash
-python vit_gaze_segmenter.py svrsearch ... \
+# prediction-space (the --svr-* baseline in metacompare)
+python vit_gaze_segmenter.py svrsearch --space prediction ... \
   --base-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
   --fold-index 0 --pop 30 --iters 50 --json-out svr_hp_fold0.json
-# Then paste the printed --svr-C/--svr-gamma/--svr-eps into the metacompare command
-# for the same fold, so the SVR baseline is tuned rather than sklearn-default.
+
+# embedding-space (the --svr-embed baseline, Zhu et al.'s recipe)
+python vit_gaze_segmenter.py svrsearch --space embedding ... \
+  --base-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --fold-index 0 --pop 30 --iters 50 --json-out svr_embed_hp_fold0.json
 ```
 
-Search bounds: `C` in `[0.1, 1000]`, `gamma` in `[0.001, 10]`,
-`epsilon` in `[0.01, 0.1]` (Zhu et al., `benchmarks.py:getFunctionDetails`).
-Note: we tune SVR in *prediction* space (the correction our `metacompare`
-applies), not embedding space (where Zhu et al. fit SVR as the readout
-itself); the HP family is the same but the tuned values are calibrated to
-our pipeline.
+Each run prints a paste-ready `--svr-C/--svr-gamma/--svr-eps` (or
+`--svr-embed-*`) line. Search bounds: `C` in `[0.1, 1000]`, `gamma` in
+`[0.001, 10]`, `epsilon` in `[0.01, 0.1]` (Zhu et al.,
+`benchmarks.py:getFunctionDetails`).
 
 **Four-way (stacking on subject-adv features):** pass
 `--meta-adv-checkpoint` — a second `metatrain` checkpoint whose

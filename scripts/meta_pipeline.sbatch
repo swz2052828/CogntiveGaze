@@ -67,6 +67,10 @@ set -euo pipefail
 : "${FC_FT_STEPS:=20}"
 : "${FC_FT_LR:=5e-5}"
 : "${FC_FT_WD:=5e-4}"
+: "${SVR_EMBED:=1}"       # 1 = also include the SVR-on-embeddings (Zhu et al.) baseline
+: "${SVR_EMBED_C:=1.0}"
+: "${SVR_EMBED_GAMMA:=scale}"
+: "${SVR_EMBED_EPS:=0.1}"
 
 # ---- per-fold paths ----
 FOLD="${SLURM_ARRAY_TASK_ID:-0}"
@@ -140,34 +144,58 @@ else
     --log-file "$LOG_DIR/meta_on_adv_fold${FOLD}.log"
 fi
 
-# ---- stage 5a: PSO hyperparameter search for the SVR baseline ---------------
+# ---- stage 5a: PSO HP search for the prediction-space SVR baseline ----------
 SVR_HP_JSON="$OUT_ROOT/svr_hp_fold${FOLD}.json"
 if [[ "$SVR_TUNE" == "1" ]]; then
   if [[ -f "$SVR_HP_JSON" ]]; then
-    echo "[fold $FOLD] stage 5a svrsearch: skip ($SVR_HP_JSON exists)"
+    echo "[fold $FOLD] stage 5a svrsearch (prediction): skip ($SVR_HP_JSON exists)"
   else
-    echo "[fold $FOLD] stage 5a svrsearch (PSO over (C, gamma, epsilon))"
+    echo "[fold $FOLD] stage 5a svrsearch (prediction-space PSO)"
     $CLI svrsearch $COMMON_DATA \
-      --base-checkpoint "$BASE_CKPT" \
+      --base-checkpoint "$BASE_CKPT" --space prediction \
       --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
       --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
       --fold-index $FOLD --json-out "$SVR_HP_JSON" \
       --log-file "$LOG_DIR/svrsearch_fold${FOLD}.log"
   fi
-  # Extract tuned (C, gamma, epsilon) from the JSON for the current fold.
   read SVR_C SVR_GAMMA SVR_EPS < <(python -c "
 import json
 hp = json.load(open('$SVR_HP_JSON'))['$FOLD']
 print(hp['C'], hp['gamma'], hp['epsilon'])
 ")
-  echo "[fold $FOLD] tuned SVR: C=$SVR_C gamma=$SVR_GAMMA epsilon=$SVR_EPS"
+  echo "[fold $FOLD] tuned SVR (prediction): C=$SVR_C gamma=$SVR_GAMMA epsilon=$SVR_EPS"
 fi
 
-# ---- stage 5b: metacompare K-sweep ------------------------------------------
-echo "[fold $FOLD] stage 5b metacompare K-sweep"
-FC_FT_ARGS=""
+# ---- stage 5b: PSO HP search for the embedding-space SVR baseline -----------
+SVR_EMBED_HP_JSON="$OUT_ROOT/svr_embed_hp_fold${FOLD}.json"
+if [[ "$SVR_EMBED" == "1" && "$SVR_TUNE" == "1" ]]; then
+  if [[ -f "$SVR_EMBED_HP_JSON" ]]; then
+    echo "[fold $FOLD] stage 5b svrsearch (embedding): skip ($SVR_EMBED_HP_JSON exists)"
+  else
+    echo "[fold $FOLD] stage 5b svrsearch (embedding-space PSO, Zhu et al. recipe)"
+    $CLI svrsearch $COMMON_DATA \
+      --base-checkpoint "$BASE_CKPT" --space embedding \
+      --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
+      --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
+      --fold-index $FOLD --json-out "$SVR_EMBED_HP_JSON" \
+      --log-file "$LOG_DIR/svrsearch_embed_fold${FOLD}.log"
+  fi
+  read SVR_EMBED_C SVR_EMBED_GAMMA SVR_EMBED_EPS < <(python -c "
+import json
+hp = json.load(open('$SVR_EMBED_HP_JSON'))['$FOLD']
+print(hp['C'], hp['gamma'], hp['epsilon'])
+")
+  echo "[fold $FOLD] tuned SVR (embedding): C=$SVR_EMBED_C gamma=$SVR_EMBED_GAMMA epsilon=$SVR_EMBED_EPS"
+fi
+
+# ---- stage 5c: metacompare K-sweep ------------------------------------------
+echo "[fold $FOLD] stage 5c metacompare K-sweep"
+EXTRA_ARGS=""
 if [[ "$FC_FT" == "1" ]]; then
-  FC_FT_ARGS="--fc-ft --fc-ft-steps $FC_FT_STEPS --fc-ft-lr $FC_FT_LR --fc-ft-weight-decay $FC_FT_WD"
+  EXTRA_ARGS="$EXTRA_ARGS --fc-ft --fc-ft-steps $FC_FT_STEPS --fc-ft-lr $FC_FT_LR --fc-ft-weight-decay $FC_FT_WD"
+fi
+if [[ "$SVR_EMBED" == "1" ]]; then
+  EXTRA_ARGS="$EXTRA_ARGS --svr-embed --svr-embed-C $SVR_EMBED_C --svr-embed-gamma $SVR_EMBED_GAMMA --svr-embed-eps $SVR_EMBED_EPS"
 fi
 for K in $K_SWEEP; do
   echo "[fold $FOLD]   K=$K"
@@ -178,7 +206,7 @@ for K in $K_SWEEP; do
     --k $K --trials $TRIALS \
     --inner-steps $INNER_STEPS --inner-lr $INNER_LR \
     --svr-C $SVR_C --svr-gamma $SVR_GAMMA --svr-eps $SVR_EPS \
-    $FC_FT_ARGS \
+    $EXTRA_ARGS \
     --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
     --fold-index $FOLD --csv-out "$CSV_OUT" \
     --log-file "$LOG_DIR/metacompare_K${K}_fold${FOLD}.log"

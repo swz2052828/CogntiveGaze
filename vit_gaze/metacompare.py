@@ -77,6 +77,10 @@ def _run_metacompare(args):
         line = f"metacompare CV summary folds={len(fold_rows)} K={args.k} {parts}"
         line += f" svr_gain={agg['base'] - agg['svr']:.4f} meta_gain={agg['base'] - agg['meta']:.4f}"
         line += f" meta_vs_svr={agg['svr'] - agg['meta']:.4f}"
+        if "svr_embed" in methods:
+            line += (f" svr_embed_gain={agg['base'] - agg['svr_embed']:.4f}"
+                     f" svr_embed_vs_svr={agg['svr'] - agg['svr_embed']:.4f}"
+                     f" meta_vs_svr_embed={agg['svr_embed'] - agg['meta']:.4f}")
         if "fc_ft" in methods:
             line += (f" fc_ft_gain={agg['base'] - agg['fc_ft']:.4f}"
                      f" fc_ft_vs_svr={agg['svr'] - agg['fc_ft']:.4f}"
@@ -90,6 +94,8 @@ def _run_metacompare(args):
 
 def _active_methods(args):
     methods = ["base", "svr"]
+    if getattr(args, "svr_embed", False):
+        methods.append("svr_embed")
     if getattr(args, "fc_ft", False):
         methods.append("fc_ft")
     methods.append("meta")
@@ -198,6 +204,29 @@ def _fc_ft_predict(base_model, base_mean, base_std, base_feats, gazes,
         return denormalize_gaze(readout(f_qry).float(), base_mean, base_std).cpu().numpy()
 
 
+def _svr_embed_predict(base_feats, gazes, sup_rows, qry_rows, C, gamma, epsilon):
+    """SVR-on-embeddings baseline (Zhu et al., SwarmIntelligentCalibration).
+
+    Fits two RBF-SVRs on K support pairs of (fused feature -> coord), then
+    predicts on the query features. This replaces the readout entirely with a
+    per-subject SVR -- structurally what Zhu et al. do, but applied to OUR
+    cached fused features so the comparison is fair (same encoder, same K).
+
+    Numerics: the feature dim (~2304) > K at small K, so the SVR is in the
+    underdetermined regime. That is part of what the comparison is meant to
+    expose: meta-adapter and prediction-space SVR both anchor on a working
+    base model, whereas this method must learn the full feature -> gaze map
+    from K points.
+    """
+    from sklearn.svm import SVR
+    f_sup = base_feats[sup_rows].numpy()
+    f_qry = base_feats[qry_rows].numpy()
+    y_sup = gazes[sup_rows].numpy()
+    svr_x = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(f_sup, y_sup[:, 0])
+    svr_y = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(f_sup, y_sup[:, 1])
+    return np.stack([svr_x.predict(f_qry), svr_y.predict(f_qry)], axis=1)
+
+
 def _meta_predict(bundle, sup_rows, qry_rows, gazes, device, inner_lr, inner_steps):
     """Adapt a (model, adapter, feats, mean, std) bundle on support, predict on query."""
     model, adapter, feats, mean, std = bundle
@@ -274,6 +303,14 @@ def _compare_one_fold(args, dataset, split, device):
             pred_q_svr = svr.transform(pred_q_base)
             errs["svr"].append(float(np.linalg.norm(pred_q_svr - gt_q, axis=1).mean()))
 
+            # SVR on embeddings (Zhu et al.'s actual recipe): SVR replaces the readout.
+            if "svr_embed" in methods:
+                pred_q_se = _svr_embed_predict(
+                    base_feats, gazes_b, sup_rows, qry_rows,
+                    C=args.svr_embed_C, gamma=args.svr_embed_gamma,
+                    epsilon=args.svr_embed_eps)
+                errs["svr_embed"].append(float(np.linalg.norm(pred_q_se - gt_q, axis=1).mean()))
+
             # fc_ft: head-only fine-tune on support features (Zhu et al. baseline)
             if "fc_ft" in methods:
                 pred_q_fc = _fc_ft_predict(
@@ -304,7 +341,7 @@ def _compare_one_fold(args, dataset, split, device):
     for k in methods:
         fold_summary[k] = float(np.mean(per_rec[k])) if per_rec[k] else float("nan")
     # Keep the CSV schema stable regardless of which methods ran this time.
-    for k in ("fc_ft", "meta_adv"):
+    for k in ("svr_embed", "fc_ft", "meta_adv"):
         fold_summary.setdefault(k, float("nan"))
     log(f"Fold {fold} done K={K} "
         + " ".join(f"mean_{k}={fold_summary[k]:.4f}" for k in methods))
@@ -322,8 +359,9 @@ def _append_csv(path, row, args):
         w = csv.writer(f)
         if new:
             w.writerow(["fold", "K", "trials", "inner_steps", "inner_lr",
-                        "svr_C", "base", "svr", "fc_ft", "meta", "meta_adv"])
+                        "svr_C", "base", "svr", "svr_embed", "fc_ft", "meta", "meta_adv"])
         w.writerow([row["fold"], args.k, args.trials, args.inner_steps, args.inner_lr,
                     args.svr_C, row["base"], row["svr"],
+                    row.get("svr_embed", float("nan")),
                     row.get("fc_ft", float("nan")), row["meta"],
                     row.get("meta_adv", float("nan"))])
