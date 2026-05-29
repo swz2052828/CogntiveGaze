@@ -329,6 +329,32 @@ It groups by K and plots mean ± std-across-folds for every method present
 claim is meta reaching SVR's asymptotic accuracy at a **smaller K** (fewer
 calibration points), and `meta_adv` undercutting both.
 
+### One-button driver: `scripts/meta_pipeline.sbatch`
+
+For the full experiment, submit the driver as a 5-fold Slurm array — each
+array task runs all five stages sequentially for its fold (base train →
+subject-adv train → metatrain on base → metatrain on adv → metacompare
+K-sweep), writing to a shared `metacompare.csv`. Stages whose final
+checkpoint already exists are skipped, so re-submitting after a partial
+failure resumes cleanly.
+
+```bash
+# fill in your cluster's #SBATCH directives at the top of the script
+# (partition / account / time / GPU / cpus / mem)
+sbatch --array=0-4 scripts/meta_pipeline.sbatch
+
+# after the array finishes, render the K-sweep figure
+bash scripts/plot_metacompare.sh
+```
+
+Override knobs without editing the script via `--export`:
+
+```bash
+sbatch --array=0-4 --export=ALL,DATA_PATH=/scratch/me/ProcessedData,\
+EPOCHS=30,ADV_WEIGHT=0.05,K_SWEEP='8 16 32 64' \
+  scripts/meta_pipeline.sbatch
+```
+
 ### Writing the log to a file
 
 By default the per-batch / per-epoch / accel log lines go to stdout. Pass
