@@ -292,6 +292,12 @@ def build_parser():
                             help="Trained `train` checkpoint (encoder+head).")
     cmp_parser.add_argument("--meta-checkpoint", required=True,
                             help="Trained `metatrain` checkpoint (encoder+head+adapter init).")
+    cmp_parser.add_argument(
+        "--meta-adv-checkpoint", default=None,
+        help="Optional second `metatrain` checkpoint built on subject-adversarial "
+             "features (i.e. metatrain --init-checkpoint <a --subject-adv run>). "
+             "When given, a 4th method 'meta_adv' is scored on the same draws, "
+             "yielding the four-way base / svr / meta / meta_adv comparison.")
     cmp_parser.add_argument("--k", type=int, default=16,
                             help="Calibration frames per subject (matched across the three methods).")
     cmp_parser.add_argument("--trials", type=int, default=5,

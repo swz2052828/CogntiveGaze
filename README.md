@@ -297,6 +297,38 @@ the end aggregates across folds. The `--csv-out` flag appends a row per fold,
 which is useful for sweeping `--k` over `{4, 8, 16, 32, 64}` to plot a
 calibration-points-vs-error curve for both methods on the same axes.
 
+**Four-way (stacking on subject-adv features):** pass
+`--meta-adv-checkpoint` — a second `metatrain` checkpoint whose
+`--init-checkpoint` was a `--subject-adv` run — to add a `meta_adv` method
+scored on the *same* support/query draws. This answers "does meta-adaptation
+on subject-invariant features beat meta-adaptation on plain features, and
+both beat SVR?":
+
+```bash
+python vit_gaze_segmenter.py metacompare ... \
+  --base-checkpoint  ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --meta-checkpoint  ./meta_out/fold0_meta_film_vit_gaze.pth \
+  --meta-adv-checkpoint ./meta_adv_out/fold0_meta_film_vit_gaze.pth \
+  --k 16 --trials 5 --fold-index 0 --csv-out metacompare.csv
+```
+
+The summary then also reports `meta_adv_gain`, `meta_adv_vs_svr`, and
+`meta_adv_vs_meta`.
+
+### Plotting the K-sweep curve
+
+After running `metacompare` at several `--k` values (all appending to the
+same `--csv-out`), render the error-vs-K figure:
+
+```bash
+python -m vit_gaze.plot_metacompare --csv metacompare.csv --out kcurve.png
+```
+
+It groups by K and plots mean ± std-across-folds for every method present
+(`base / svr / meta / meta_adv`), x-axis log-scaled in K. The publishable
+claim is meta reaching SVR's asymptotic accuracy at a **smaller K** (fewer
+calibration points), and `meta_adv` undercutting both.
+
 ### Writing the log to a file
 
 By default the per-batch / per-epoch / accel log lines go to stdout. Pass
