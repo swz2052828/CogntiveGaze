@@ -3,6 +3,7 @@ import argparse
 from .explain import explain
 from .meta import meta_train
 from .metacompare import metacompare
+from .svr_search import svrsearch
 from .training import train
 
 
@@ -312,6 +313,19 @@ def build_parser():
     cmp_parser.add_argument("--svr-C", type=float, default=1.0)
     cmp_parser.add_argument("--svr-eps", type=float, default=0.1)
     cmp_parser.add_argument("--svr-gamma", default="scale")
+    cmp_parser.add_argument(
+        "--fc-ft", action="store_true",
+        help="Enable the head-only fine-tune baseline (Zhu et al. style): per "
+             "subject, clone the base model's readout, Adam-train it on the K "
+             "support frames for --fc-ft-steps, predict on the query frames. "
+             "Adds a 'fc_ft' method to the comparison.",
+    )
+    cmp_parser.add_argument("--fc-ft-steps", type=int, default=20,
+                            help="Full-batch Adam steps for fc_ft (default 20, matches Zhu et al.).")
+    cmp_parser.add_argument("--fc-ft-lr", type=float, default=5e-5,
+                            help="Adam lr for fc_ft (default 5e-5, matches Zhu et al.).")
+    cmp_parser.add_argument("--fc-ft-weight-decay", type=float, default=5e-4,
+                            help="Adam weight_decay for fc_ft (default 5e-4, matches Zhu et al.).")
     cmp_parser.add_argument("--batch-size", type=int, default=64)
     cmp_parser.add_argument("--num-workers", type=int, default=4)
     cmp_parser.add_argument("--folds", type=int, default=5)
@@ -320,6 +334,32 @@ def build_parser():
     cmp_parser.add_argument("--log-file", default=None)
     cmp_parser.add_argument("--csv-out", default=None,
                             help="Append per-fold rows to this CSV for plotting.")
+
+    svr_parser = subparsers.add_parser(
+        "svrsearch",
+        help="Swarm-style global hyperparameter search for the per-subject SVR "
+             "baseline (inspired by Zhu et al., SwarmIntelligentCalibration). "
+             "Tunes one (C, gamma, epsilon) triple per fold by minimizing mean "
+             "Euclidean error across training-fold subjects; paste the result "
+             "into metacompare via --svr-C/--svr-gamma/--svr-eps.",
+    )
+    add_common_args(svr_parser)
+    svr_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    svr_parser.add_argument("--base-checkpoint", required=True)
+    svr_parser.add_argument("--k", type=int, default=16,
+                            help="Calibration frames per subject during HP search.")
+    svr_parser.add_argument("--trials", type=int, default=3,
+                            help="Random support/query draws per subject per fitness eval.")
+    svr_parser.add_argument("--pop", type=int, default=30, help="PSO population size.")
+    svr_parser.add_argument("--iters", type=int, default=50, help="PSO outer iterations.")
+    svr_parser.add_argument("--batch-size", type=int, default=64)
+    svr_parser.add_argument("--num-workers", type=int, default=4)
+    svr_parser.add_argument("--folds", type=int, default=5)
+    svr_parser.add_argument("--fold-index", type=int, default=None)
+    svr_parser.add_argument("--seed", type=int, default=42)
+    svr_parser.add_argument("--log-file", default=None)
+    svr_parser.add_argument("--json-out", default=None,
+                            help="Write the tuned per-fold hyperparameters to this JSON file.")
 
     explain_parser = subparsers.add_parser("explain")
     add_common_args(explain_parser)
@@ -366,6 +406,8 @@ def main():
         meta_train(args)
     elif args.command == "metacompare":
         metacompare(args)
+    elif args.command == "svrsearch":
+        svrsearch(args)
     elif args.command == "explain":
         explain(args)
     else:

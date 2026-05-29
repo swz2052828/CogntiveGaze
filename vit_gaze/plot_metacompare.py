@@ -21,16 +21,18 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import matplotlib.ticker as mticker  # noqa: E402
 
-_METHODS = ("base", "svr", "meta", "meta_adv")
+_METHODS = ("base", "svr", "fc_ft", "meta", "meta_adv")
 _LABELS = {
     "base": "Base (no calibration)",
     "svr": "Per-subject SVR",
+    "fc_ft": "Head-only fine-tune (Zhu et al.)",
     "meta": "Meta-adapter",
     "meta_adv": "Meta-adapter (subject-adv features)",
 }
 _STYLE = {
     "base": dict(color="0.5", marker="o", linestyle="--"),
     "svr": dict(color="tab:orange", marker="s", linestyle="-"),
+    "fc_ft": dict(color="tab:red", marker="v", linestyle="-"),
     "meta": dict(color="tab:blue", marker="^", linestyle="-"),
     "meta_adv": dict(color="tab:green", marker="D", linestyle="-"),
 }

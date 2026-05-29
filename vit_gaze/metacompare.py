@@ -77,6 +77,10 @@ def _run_metacompare(args):
         line = f"metacompare CV summary folds={len(fold_rows)} K={args.k} {parts}"
         line += f" svr_gain={agg['base'] - agg['svr']:.4f} meta_gain={agg['base'] - agg['meta']:.4f}"
         line += f" meta_vs_svr={agg['svr'] - agg['meta']:.4f}"
+        if "fc_ft" in methods:
+            line += (f" fc_ft_gain={agg['base'] - agg['fc_ft']:.4f}"
+                     f" fc_ft_vs_svr={agg['svr'] - agg['fc_ft']:.4f}"
+                     f" meta_vs_fc_ft={agg['fc_ft'] - agg['meta']:.4f}")
         if "meta_adv" in methods:
             line += (f" meta_adv_gain={agg['base'] - agg['meta_adv']:.4f}"
                      f" meta_adv_vs_svr={agg['svr'] - agg['meta_adv']:.4f}"
@@ -85,7 +89,10 @@ def _run_metacompare(args):
 
 
 def _active_methods(args):
-    methods = ["base", "svr", "meta"]
+    methods = ["base", "svr"]
+    if getattr(args, "fc_ft", False):
+        methods.append("fc_ft")
+    methods.append("meta")
     if getattr(args, "meta_adv_checkpoint", None):
         methods.append("meta_adv")
     return methods
@@ -163,6 +170,34 @@ def _adapt_meta(model, adapter, init_params, f_sup, y_sup, inner_lr, inner_steps
     return fast
 
 
+def _fc_ft_predict(base_model, base_mean, base_std, base_feats, gazes,
+                   sup_rows, qry_rows, device, lr, steps, weight_decay):
+    """Fc-only fine-tune baseline (Zhu et al., finetuning_freezen.py).
+
+    Clones the base model's readout, freezes everything else (implicit -- only
+    readout params are passed to the optimizer), Adam-trains on the K support
+    features for ``steps`` full-batch SGD steps, predicts on query features.
+    The encoder is never re-run: we reuse the cached fused features that the
+    base predictions were computed from, which is exactly what their fc-only
+    fine-tune would see if the encoder were frozen (and it is).
+    """
+    import copy
+    readout = copy.deepcopy(base_model.readout).to(device)
+    readout.train()
+    opt = torch.optim.Adam(readout.parameters(), lr=lr, weight_decay=weight_decay)
+    f_sup = base_feats[sup_rows].to(device)
+    y_sup = normalize_gaze(gazes[sup_rows].to(device), base_mean, base_std)
+    f_qry = base_feats[qry_rows].to(device)
+    for _ in range(steps):
+        opt.zero_grad(set_to_none=True)
+        loss = F.smooth_l1_loss(readout(f_sup), y_sup)
+        loss.backward()
+        opt.step()
+    readout.eval()
+    with torch.no_grad():
+        return denormalize_gaze(readout(f_qry).float(), base_mean, base_std).cpu().numpy()
+
+
 def _meta_predict(bundle, sup_rows, qry_rows, gazes, device, inner_lr, inner_steps):
     """Adapt a (model, adapter, feats, mean, std) bundle on support, predict on query."""
     model, adapter, feats, mean, std = bundle
@@ -190,7 +225,7 @@ def _compare_one_fold(args, dataset, split, device):
     meta_model, adapter, meta_mean, meta_std = _load_meta_checkpoint(args.meta_checkpoint, device)
 
     log(f"Fold {fold} caching features val_recordings={split['val_recordings']}")
-    _, gazes_b, base_preds = _features_and_preds(
+    base_feats, gazes_b, base_preds = _features_and_preds(
         base_model, dataset, val_idx, base_mean, base_std, device,
         args.batch_size, args.num_workers)
     meta_feats, gazes_m, _ = _features_and_preds(
@@ -239,6 +274,15 @@ def _compare_one_fold(args, dataset, split, device):
             pred_q_svr = svr.transform(pred_q_base)
             errs["svr"].append(float(np.linalg.norm(pred_q_svr - gt_q, axis=1).mean()))
 
+            # fc_ft: head-only fine-tune on support features (Zhu et al. baseline)
+            if "fc_ft" in methods:
+                pred_q_fc = _fc_ft_predict(
+                    base_model, base_mean, base_std, base_feats, gazes_b,
+                    sup_rows, qry_rows, device,
+                    lr=args.fc_ft_lr, steps=args.fc_ft_steps,
+                    weight_decay=args.fc_ft_weight_decay)
+                errs["fc_ft"].append(float(np.linalg.norm(pred_q_fc - gt_q, axis=1).mean()))
+
             # meta: adapt on support features, predict on query features
             pred_q_meta = _meta_predict(meta_bundle, sup_rows, qry_rows, gazes_m, device,
                                         args.inner_lr, args.inner_steps)
@@ -259,8 +303,9 @@ def _compare_one_fold(args, dataset, split, device):
     fold_summary = {"fold": fold}
     for k in methods:
         fold_summary[k] = float(np.mean(per_rec[k])) if per_rec[k] else float("nan")
-    if "meta_adv" not in fold_summary:
-        fold_summary["meta_adv"] = float("nan")
+    # Keep the CSV schema stable regardless of which methods ran this time.
+    for k in ("fc_ft", "meta_adv"):
+        fold_summary.setdefault(k, float("nan"))
     log(f"Fold {fold} done K={K} "
         + " ".join(f"mean_{k}={fold_summary[k]:.4f}" for k in methods))
 
@@ -277,7 +322,8 @@ def _append_csv(path, row, args):
         w = csv.writer(f)
         if new:
             w.writerow(["fold", "K", "trials", "inner_steps", "inner_lr",
-                        "svr_C", "base", "svr", "meta", "meta_adv"])
+                        "svr_C", "base", "svr", "fc_ft", "meta", "meta_adv"])
         w.writerow([row["fold"], args.k, args.trials, args.inner_steps, args.inner_lr,
-                    args.svr_C, row["base"], row["svr"], row["meta"],
+                    args.svr_C, row["base"], row["svr"],
+                    row.get("fc_ft", float("nan")), row["meta"],
                     row.get("meta_adv", float("nan"))])

@@ -303,6 +303,40 @@ the end aggregates across folds. The `--csv-out` flag appends a row per fold,
 which is useful for sweeping `--k` over `{4, 8, 16, 32, 64}` to plot a
 calibration-points-vs-error curve for both methods on the same axes.
 
+**Head-only fine-tune baseline (`--fc-ft`)** — the Zhu et al. recipe
+(`finetuning_freezen.py`): per subject, clone the base model's readout,
+freeze everything else, Adam-train (`--fc-ft-lr` 5e-5, `--fc-ft-weight-decay`
+5e-4, `--fc-ft-steps` 20 — their defaults) on the K support frames, predict
+on the query frames. Uses the *same* cached features as the SVR and meta
+methods, so it's free per draw and a fair head-to-head:
+
+```bash
+python vit_gaze_segmenter.py metacompare ... --fc-ft \
+  --base-checkpoint ... --meta-checkpoint ... --k 16
+```
+
+The summary then includes `fc_ft_gain`, `fc_ft_vs_svr`, and `meta_vs_fc_ft`.
+
+**Tuned SVR baseline (`svrsearch`)** — sklearn defaults under-tune the SVR;
+the `svrsearch` subcommand runs a swarm-style global search (PSO over
+`(C, gamma, epsilon)`, search bounds matching Zhu et al.) on the **training**
+subjects of each fold and prints the optimal triple for that fold:
+
+```bash
+python vit_gaze_segmenter.py svrsearch ... \
+  --base-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --fold-index 0 --pop 30 --iters 50 --json-out svr_hp_fold0.json
+# Then paste the printed --svr-C/--svr-gamma/--svr-eps into the metacompare command
+# for the same fold, so the SVR baseline is tuned rather than sklearn-default.
+```
+
+Search bounds: `C` in `[0.1, 1000]`, `gamma` in `[0.001, 10]`,
+`epsilon` in `[0.01, 0.1]` (Zhu et al., `benchmarks.py:getFunctionDetails`).
+Note: we tune SVR in *prediction* space (the correction our `metacompare`
+applies), not embedding space (where Zhu et al. fit SVR as the readout
+itself); the HP family is the same but the tuned values are calibrated to
+our pipeline.
+
 **Four-way (stacking on subject-adv features):** pass
 `--meta-adv-checkpoint` — a second `metatrain` checkpoint whose
 `--init-checkpoint` was a `--subject-adv` run — to add a `meta_adv` method

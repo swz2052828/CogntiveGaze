@@ -58,6 +58,15 @@ set -euo pipefail
 : "${K_SWEEP:=4 8 16 32 64}"
 : "${TRIALS:=5}"
 : "${SVR_C:=1.0}"
+: "${SVR_GAMMA:=scale}"
+: "${SVR_EPS:=0.1}"
+: "${SVR_TUNE:=1}"        # 1 = run PSO HP search, paste tuned (C, gamma, epsilon)
+: "${SVR_POP:=30}"
+: "${SVR_ITERS:=50}"
+: "${FC_FT:=1}"           # 1 = add the fc-only fine-tune baseline to metacompare
+: "${FC_FT_STEPS:=20}"
+: "${FC_FT_LR:=5e-5}"
+: "${FC_FT_WD:=5e-4}"
 
 # ---- per-fold paths ----
 FOLD="${SLURM_ARRAY_TASK_ID:-0}"
@@ -131,8 +140,35 @@ else
     --log-file "$LOG_DIR/meta_on_adv_fold${FOLD}.log"
 fi
 
-# ---- stage 5: metacompare K-sweep -------------------------------------------
-echo "[fold $FOLD] stage 5 metacompare K-sweep"
+# ---- stage 5a: PSO hyperparameter search for the SVR baseline ---------------
+SVR_HP_JSON="$OUT_ROOT/svr_hp_fold${FOLD}.json"
+if [[ "$SVR_TUNE" == "1" ]]; then
+  if [[ -f "$SVR_HP_JSON" ]]; then
+    echo "[fold $FOLD] stage 5a svrsearch: skip ($SVR_HP_JSON exists)"
+  else
+    echo "[fold $FOLD] stage 5a svrsearch (PSO over (C, gamma, epsilon))"
+    $CLI svrsearch $COMMON_DATA \
+      --base-checkpoint "$BASE_CKPT" \
+      --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
+      --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
+      --fold-index $FOLD --json-out "$SVR_HP_JSON" \
+      --log-file "$LOG_DIR/svrsearch_fold${FOLD}.log"
+  fi
+  # Extract tuned (C, gamma, epsilon) from the JSON for the current fold.
+  read SVR_C SVR_GAMMA SVR_EPS < <(python -c "
+import json
+hp = json.load(open('$SVR_HP_JSON'))['$FOLD']
+print(hp['C'], hp['gamma'], hp['epsilon'])
+")
+  echo "[fold $FOLD] tuned SVR: C=$SVR_C gamma=$SVR_GAMMA epsilon=$SVR_EPS"
+fi
+
+# ---- stage 5b: metacompare K-sweep ------------------------------------------
+echo "[fold $FOLD] stage 5b metacompare K-sweep"
+FC_FT_ARGS=""
+if [[ "$FC_FT" == "1" ]]; then
+  FC_FT_ARGS="--fc-ft --fc-ft-steps $FC_FT_STEPS --fc-ft-lr $FC_FT_LR --fc-ft-weight-decay $FC_FT_WD"
+fi
 for K in $K_SWEEP; do
   echo "[fold $FOLD]   K=$K"
   $CLI metacompare $COMMON_DATA \
@@ -141,7 +177,8 @@ for K in $K_SWEEP; do
     --meta-adv-checkpoint "$META_ADV_CKPT" \
     --k $K --trials $TRIALS \
     --inner-steps $INNER_STEPS --inner-lr $INNER_LR \
-    --svr-C $SVR_C \
+    --svr-C $SVR_C --svr-gamma $SVR_GAMMA --svr-eps $SVR_EPS \
+    $FC_FT_ARGS \
     --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
     --fold-index $FOLD --csv-out "$CSV_OUT" \
     --log-file "$LOG_DIR/metacompare_K${K}_fold${FOLD}.log"
