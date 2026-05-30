@@ -276,8 +276,20 @@ def build_parser():
         "--meta-query", type=int, default=32,
         help="Query frames per task per outer step (the post-adaptation loss).",
     )
-    meta_parser.add_argument("--inner-steps", type=int, default=5)
-    meta_parser.add_argument("--inner-lr", type=float, default=1e-2)
+    meta_parser.add_argument(
+        "--inner-steps", type=int, default=20,
+        help="Inner-loop SGD steps used to adapt the FiLM/LoRA fast-weights "
+             "from the meta-learned init on each task's support set. The empirical "
+             "sweet spot for FiLM at fused_dim~=2300 is ~20 (smoke runs at 5 left "
+             "the adapter essentially unmoved; the K-knob did nothing).",
+    )
+    meta_parser.add_argument(
+        "--inner-lr", type=float, default=1.0,
+        help="Inner-loop SGD learning rate. With FiLM (gamma init=1, beta init=0) "
+             "the adapter needs an aggressive lr to actually move within --inner-steps; "
+             "1.0 worked in smoke (1e-2 was too conservative -- the adapter returned "
+             "the base prediction regardless of K).",
+    )
     meta_parser.add_argument("--outer-lr", type=float, default=1e-3)
     meta_parser.add_argument(
         "--adapt-steps", type=int, default=None,
@@ -322,8 +334,16 @@ def build_parser():
                             help="Calibration frames per subject (matched across the three methods).")
     cmp_parser.add_argument("--trials", type=int, default=5,
                             help="Random support/query draws per recording; results are averaged.")
-    cmp_parser.add_argument("--inner-steps", type=int, default=5)
-    cmp_parser.add_argument("--inner-lr", type=float, default=1e-2)
+    cmp_parser.add_argument(
+        "--inner-steps", type=int, default=20,
+        help="Inner-loop SGD steps used when adapting the meta adapter on K "
+             "support frames. Should match the value used at metatrain time "
+             "(both default to 20 -- see metatrain --inner-steps for the rationale).",
+    )
+    cmp_parser.add_argument(
+        "--inner-lr", type=float, default=1.0,
+        help="Inner-loop SGD lr; should match metatrain --inner-lr (both 1.0).",
+    )
     cmp_parser.add_argument("--svr-C", type=float, default=1.0)
     cmp_parser.add_argument("--svr-eps", type=float, default=0.1)
     cmp_parser.add_argument("--svr-gamma", type=_gamma_arg, default="scale")
