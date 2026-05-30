@@ -108,12 +108,15 @@ def build_parser():
     )
     train_parser.add_argument(
         "--backbone",
-        choices=("vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("vit", "foveal_vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help=(
-            "Multistream backbone. vit (default) = shared ViT-B/16 with optional "
-            "grid. itracker / mobilenet_v3 / affnet / mgazenet are CNN baselines "
-            "ported from the project's reference implementations; all four "
+            "Multistream backbone. vit (default) = shared ViT-B/16 run three "
+            "times in parallel over face/L-eye/R-eye, features concatenated. "
+            "foveal_vit = single ViT-B/16 over a concatenated token sequence "
+            "with cross-region attention; face at low res (112x112), eyes at "
+            "high res (224x224), region-type embeddings. itracker / "
+            "mobilenet_v3 / affnet / mgazenet are CNN baselines; all four "
             "require --use-grid (architectures use or condition on the face-grid)."
         ),
     )
@@ -245,12 +248,14 @@ def build_parser():
     meta_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
     meta_parser.add_argument(
         "--backbone",
-        choices=("vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("vit", "foveal_vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help="All multistream backbones expose forward_features and are "
              "supported. The CNN baselines (itracker/mobilenet_v3/affnet/"
-             "mgazenet) require --use-grid. Use --init-checkpoint to start from "
-             "a trained encoder (the frozen encoder is otherwise un-tuned).",
+             "mgazenet) require --use-grid. foveal_vit emits a 768-d feature "
+             "(vs 2304-d for the three-stream vit), which makes the FiLM/LoRA "
+             "adapters 3x smaller. Use --init-checkpoint to start from a "
+             "trained encoder (the frozen encoder is otherwise un-tuned).",
     )
     meta_parser.add_argument("--weights", choices=("none", "imagenet"), default="imagenet")
     meta_parser.add_argument("--freeze-encoder", action="store_true")

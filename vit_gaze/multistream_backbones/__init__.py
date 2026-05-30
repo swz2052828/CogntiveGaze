@@ -8,6 +8,9 @@ A small ABC `MultistreamBackboneBase` documents the convention. Concrete
 backbones:
 
   vit          MultiStreamViTGaze (shared ViT-B/16 + optional grid MLP, ours)
+  foveal_vit   FovealViTMultistream - single ViT-B/16 over a concatenated
+               token sequence (face low-res + eyes high-res + grid token),
+               with cross-region attention and learnable region-type embeddings.
   itracker     ITrackerCNN, the original GazeCapture iTracker (AlexNet-ish)
   mobilenet_v3 MobileNetV3-Large feature extractor with the iTracker fusion head
   affnet       GazeAGNModel - Adaptive Group Normalisation, eyes conditioned on
@@ -26,6 +29,7 @@ from .adapter import (
     build_multistream_backbone,
 )
 from .affnet import AFFNetMultistream
+from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
 from .mgazenet import MGazeNetMultistream
 from .mobilenet_v3 import MobileNetV3Multistream
@@ -34,6 +38,7 @@ from .vit_shared import MultiStreamViTGaze
 __all__ = [
     "MultistreamBackboneBase",
     "MultiStreamViTGaze",
+    "FovealViTMultistream",
     "ITrackerMultistream",
     "MobileNetV3Multistream",
     "AFFNetMultistream",
