@@ -301,6 +301,13 @@ def build_parser():
     )
     add_common_args(cmp_parser)
     cmp_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    cmp_parser.add_argument(
+        "--backbone", default=None,
+        help="Accepted for symmetry with train / metatrain (so the same sbatch "
+             "driver can pass it to every subcommand). Ignored: the actual "
+             "backbone is read from each loaded checkpoint, which is the "
+             "authoritative source.",
+    )
     cmp_parser.add_argument("--base-checkpoint", required=True,
                             help="Trained `train` checkpoint (encoder+head).")
     cmp_parser.add_argument("--meta-checkpoint", required=True,
@@ -362,6 +369,11 @@ def build_parser():
     )
     add_common_args(svr_parser)
     svr_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    svr_parser.add_argument(
+        "--backbone", default=None,
+        help="Accepted for symmetry with train / metatrain. Ignored: the "
+             "backbone is read from --base-checkpoint, which is authoritative.",
+    )
     svr_parser.add_argument("--base-checkpoint", required=True)
     svr_parser.add_argument(
         "--space", choices=("prediction", "embedding"), default="prediction",
