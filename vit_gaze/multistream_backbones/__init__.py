@@ -11,6 +11,10 @@ backbones:
   foveal_vit   FovealViTMultistream - single ViT-B/16 over a concatenated
                token sequence (face low-res + eyes high-res + grid token),
                with cross-region attention and learnable region-type embeddings.
+  eyes_only_vit  EyesOnlyViTGaze - shared ViT-B/16 over the two eye crops
+               only; face and grid are ignored. Ablation: does per-subject
+               calibration absorb the head-pose / distance info that face+grid
+               otherwise provide?
   itracker     ITrackerCNN, the original GazeCapture iTracker (AlexNet-ish)
   mobilenet_v3 MobileNetV3-Large feature extractor with the iTracker fusion head
   affnet       GazeAGNModel - Adaptive Group Normalisation, eyes conditioned on
@@ -29,6 +33,7 @@ from .adapter import (
     build_multistream_backbone,
 )
 from .affnet import AFFNetMultistream
+from .eyes_only import EyesOnlyViTGaze
 from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
 from .mgazenet import MGazeNetMultistream
@@ -38,6 +43,7 @@ from .vit_shared import MultiStreamViTGaze
 __all__ = [
     "MultistreamBackboneBase",
     "MultiStreamViTGaze",
+    "EyesOnlyViTGaze",
     "FovealViTMultistream",
     "ITrackerMultistream",
     "MobileNetV3Multistream",
