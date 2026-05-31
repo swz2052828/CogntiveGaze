@@ -32,8 +32,8 @@ import torch
 import torch.utils.data as data
 
 from . import accel
-from .dataset import build_multistream_dataset
-from .models import batch_multistream_for_mode, create_model
+from .dataset import build_multistream_dataset_maybe_video
+from .models import vivit_kwargs_from_args, batch_multistream_for_mode, create_model
 from .splits import recording_kfolds, select_splits
 from .training import denormalize_gaze, log
 
@@ -162,6 +162,7 @@ def _load_base_checkpoint(path, device):
         use_grid=bool(saved.get("use_grid", False)),
         grid_size=int(saved.get("grid_size", 25)),
         backbone=str(saved.get("backbone", "vit")),
+        **vivit_kwargs_from_args(saved),
     ).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
@@ -182,7 +183,7 @@ def _run_svrsearch(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
 
-    dataset = build_multistream_dataset(args)
+    dataset = build_multistream_dataset_maybe_video(args)
     splits_all = recording_kfolds(dataset.unique_recordings(), folds=args.folds, seed=args.seed)
     splits = select_splits(splits_all, args.fold_index)
     model, gaze_mean, gaze_std = _load_base_checkpoint(args.base_checkpoint, device)

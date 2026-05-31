@@ -402,3 +402,100 @@ def build_multistream_dataset(args):
         grid_size=getattr(args, "grid_size", 25),
         use_grid=getattr(args, "use_grid", False),
     )
+
+
+class MultiStreamVideoDataset(data.Dataset):
+    """Wraps a MultiStreamGazeDataset to return T-frame temporal windows.
+
+    Each item is a window of T consecutive frames from the SAME recording
+    (sorted by frame index). The window's label is the gaze for its LAST
+    frame -- we predict the most recent gaze given T frames of context, which
+    matches the deployment scenario.
+
+    The wrapper preserves the dataset interface (unique_recordings(),
+    indices_for_recordings(), .gazes, .recordings) so CV splits and the rest
+    of the pipeline don't need to know whether the dataset is a video dataset
+    or a per-frame one. A window's `recording` and `gaze` are those of its
+    last frame.
+
+    Memory: each item loads T frames per call (T-fold disk I/O). Persistent
+    workers and prefetch_factor>=4 are strongly recommended; the existing
+    make_loader path already sets both.
+    """
+
+    def __init__(self, base, temporal_window=8, stride=1):
+        if temporal_window < 2:
+            raise ValueError("temporal_window must be >= 2.")
+        if stride < 1:
+            raise ValueError("stride must be >= 1.")
+        self.base = base
+        self.T = int(temporal_window)
+        self.stride = int(stride)
+
+        # Build per-recording, frame-ordered index lists once at init.
+        recs_arr = base.recordings
+        frame_of = [int(base.samples[i][-1]) for i in range(len(base))]
+        order = sorted(range(len(base)), key=lambda i: (int(recs_arr[i]), frame_of[i]))
+        rec_to_indices = {}
+        for i in order:
+            rec_id = int(recs_arr[i])
+            rec_to_indices.setdefault(rec_id, []).append(i)
+
+        # Generate windows: one per (recording, end-frame) with the requested stride.
+        self.windows = []
+        for idx_list in rec_to_indices.values():
+            for end in range(self.T - 1, len(idx_list), self.stride):
+                self.windows.append(idx_list[end - self.T + 1: end + 1])
+
+        if not self.windows:
+            raise RuntimeError(
+                f"No video windows produced from {len(base)} frames at "
+                f"temporal_window={self.T}, stride={self.stride}. "
+                f"Check that recordings have >= {self.T} frames each.")
+
+        # Expose the same dataset surface as the base for CV split code.
+        self.recordings = np.array(
+            [base.recordings[w[-1]] for w in self.windows], dtype=np.int32)
+        self.gazes = np.stack(
+            [base.gazes[w[-1]] for w in self.windows]).astype(np.float32)
+        self.samples = [base.samples[w[-1]] for w in self.windows]
+
+    def unique_recordings(self):
+        return np.unique(self.recordings)
+
+    def indices_for_recordings(self, recording_ids):
+        return np.where(
+            np.isin(self.recordings, np.asarray(recording_ids, dtype=np.int32))
+        )[0].tolist()
+
+    def __len__(self):
+        return len(self.windows)
+
+    def __getitem__(self, idx):
+        window = self.windows[idx]
+        items = [self.base[i] for i in window]
+        out = {
+            "face": torch.stack([it["face"] for it in items], dim=0),       # (T, C, H, W)
+            "eye_left": torch.stack([it["eye_left"] for it in items], dim=0),
+            "eye_right": torch.stack([it["eye_right"] for it in items], dim=0),
+            "gaze": items[-1]["gaze"],
+            "index": items[-1]["index"],
+            "rec": items[-1]["rec"],
+            "frame": items[-1]["frame"],
+        }
+        if "grid" in items[0]:
+            out["grid"] = torch.stack([it["grid"] for it in items], dim=0)   # (T, grid_len)
+        return out
+
+
+def build_multistream_dataset_maybe_video(args):
+    """Build the multistream dataset, wrapping in a video window if --backbone vivit."""
+    dataset = build_multistream_dataset(args)
+    backbone = getattr(args, "backbone", "")
+    if backbone == "vivit":
+        dataset = MultiStreamVideoDataset(
+            dataset,
+            temporal_window=int(getattr(args, "temporal_window", 8)),
+            stride=int(getattr(args, "temporal_stride", 1)),
+        )
+    return dataset

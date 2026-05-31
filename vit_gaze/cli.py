@@ -84,6 +84,42 @@ def _gamma_arg(s):
     return float(s)
 
 
+def _add_vivit_args(parser):
+    """Vivit-only knobs: temporal window + temporal transformer shape + spatial
+    backbone selection. Ignored for other backbones."""
+    parser.add_argument(
+        "--temporal-window", type=int, default=8,
+        help="ViViT only. T = number of consecutive frames per sample. The "
+             "dataset is wrapped to produce (T, C, H, W) windows from each "
+             "recording (label = last frame's gaze). T-fold I/O + compute "
+             "per sample relative to the per-frame backbones, so use a "
+             "smaller --batch-size. Default 8 (~0.27 s at 30 FPS).",
+    )
+    parser.add_argument(
+        "--temporal-stride", type=int, default=1,
+        help="ViViT only. Stride between consecutive windows in a recording. "
+             "stride=1 (default) generates dense overlapping windows (T-1 "
+             "frames of overlap, most training data); stride=T generates "
+             "non-overlapping windows (T-fold fewer training samples).",
+    )
+    parser.add_argument(
+        "--vivit-spatial",
+        choices=("vit", "foveal_vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        default="vit",
+        help="ViViT only. Spatial backbone whose forward_features is run "
+             "per-frame before the temporal transformer. The vit / foveal_vit "
+             "options have ImageNet pretrain; CNN options require --use-grid.",
+    )
+    parser.add_argument(
+        "--vivit-temporal-layers", type=int, default=4,
+        help="ViViT only. Number of temporal transformer encoder layers.",
+    )
+    parser.add_argument(
+        "--vivit-temporal-heads", type=int, default=8,
+        help="ViViT only. Number of attention heads in the temporal transformer.",
+    )
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -106,9 +142,10 @@ def build_parser():
             "right eye (+ optional face-grid) and selects a backbone via --backbone."
         ),
     )
+    _add_vivit_args(train_parser)
     train_parser.add_argument(
         "--backbone",
-        choices=("vit", "foveal_vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("vit", "foveal_vit", "vivit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help=(
             "Multistream backbone. vit (default) = shared ViT-B/16 run three "
@@ -246,9 +283,10 @@ def build_parser():
     add_common_args(meta_parser)
     meta_parser.add_argument("--out-path", default="./vit_gaze_meta_output")
     meta_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    _add_vivit_args(meta_parser)
     meta_parser.add_argument(
         "--backbone",
-        choices=("vit", "foveal_vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("vit", "foveal_vit", "vivit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help="All multistream backbones expose forward_features and are "
              "supported. The CNN baselines (itracker/mobilenet_v3/affnet/"

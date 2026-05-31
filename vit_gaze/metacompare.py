@@ -28,8 +28,8 @@ import torch.utils.data as data
 
 from . import accel
 from .calibration import SVRCalibrator
-from .dataset import build_multistream_dataset
-from .models import batch_multistream_for_mode, create_model
+from .dataset import build_multistream_dataset_maybe_video
+from .models import vivit_kwargs_from_args, batch_multistream_for_mode, create_model
 from .multistream_backbones.adapter import MultistreamBackboneBase
 from .multistream_backbones.adapters import make_adapter
 from .splits import recording_kfolds, select_splits
@@ -58,7 +58,7 @@ def _run_metacompare(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
 
-    dataset = build_multistream_dataset(args)
+    dataset = build_multistream_dataset_maybe_video(args)
     splits_all = recording_kfolds(dataset.unique_recordings(), folds=args.folds, seed=args.seed)
     splits = select_splits(splits_all, args.fold_index)
 
@@ -114,6 +114,7 @@ def _load_meta_checkpoint(path, device):
         use_grid=bool(saved.get("use_grid", False)),
         grid_size=int(saved.get("grid_size", 25)),
         backbone=str(saved.get("backbone", "vit")),
+        **vivit_kwargs_from_args(saved),
     ).to(device)
     _require_meta_support(model)
     model.load_state_dict(ckpt["model"])
@@ -138,6 +139,7 @@ def _load_base_checkpoint(path, device):
         use_grid=bool(saved.get("use_grid", False)),
         grid_size=int(saved.get("grid_size", 25)),
         backbone=str(saved.get("backbone", "vit")),
+        **vivit_kwargs_from_args(saved),
     ).to(device)
     _require_meta_support(model)
     model.load_state_dict(ckpt["model"])

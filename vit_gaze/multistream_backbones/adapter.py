@@ -61,7 +61,7 @@ class MultistreamBackboneBase(nn.Module, ABC):
 
 
 REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
-SUPPORTS_NO_GRID = ("vit", "foveal_vit")
+SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit")
 
 
 def build_multistream_backbone(
@@ -70,6 +70,11 @@ def build_multistream_backbone(
     freeze_encoder: bool = False,
     use_grid: bool = False,
     grid_size: int = 25,
+    # vivit-specific (ignored for other backbones)
+    vivit_spatial: str = "vit",
+    vivit_temporal_window: int = 8,
+    vivit_temporal_layers: int = 4,
+    vivit_temporal_heads: int = 8,
 ) -> MultistreamBackboneBase:
     """Factory. Validates the grid requirement before instantiating."""
 
@@ -118,7 +123,20 @@ def build_multistream_backbone(
             use_grid=use_grid,
             grid_size=grid_size,
         )
+    if backbone == "vivit":
+        from .vivit import build_vivit
+
+        return build_vivit(
+            spatial_backbone_name=vivit_spatial,
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+            temporal_window=vivit_temporal_window,
+            num_temporal_layers=vivit_temporal_layers,
+            num_temporal_heads=vivit_temporal_heads,
+        )
     raise ValueError(
-        f"Unknown backbone '{backbone}'. Choices: vit, foveal_vit, itracker, "
-        f"mobilenet_v3, affnet, mgazenet."
+        f"Unknown backbone '{backbone}'. Choices: vit, foveal_vit, vivit, "
+        f"itracker, mobilenet_v3, affnet, mgazenet."
     )

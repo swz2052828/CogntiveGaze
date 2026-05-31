@@ -34,8 +34,8 @@ import torch.nn.functional as F
 import torch.utils.data as data
 
 from . import accel
-from .dataset import build_multistream_dataset
-from .models import batch_multistream_for_mode, create_model
+from .dataset import build_multistream_dataset_maybe_video
+from .models import vivit_kwargs_from_args, batch_multistream_for_mode, create_model
 from .multistream_backbones.adapter import MultistreamBackboneBase
 from .multistream_backbones.adapters import make_adapter
 from .splits import recording_kfolds, select_splits
@@ -56,7 +56,7 @@ def _run_meta(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
 
-    dataset = build_multistream_dataset(args)
+    dataset = build_multistream_dataset_maybe_video(args)
     all_splits = recording_kfolds(dataset.unique_recordings(), folds=args.folds, seed=args.seed)
     splits = select_splits(all_splits, args.fold_index)
 
@@ -87,6 +87,7 @@ def _build_base_model(args, device):
         use_grid=getattr(args, "use_grid", False),
         grid_size=getattr(args, "grid_size", 25),
         backbone=getattr(args, "backbone", "vit"),
+        **vivit_kwargs_from_args(args),
     ).to(device)
     if not _supports_meta(model):
         raise ValueError(

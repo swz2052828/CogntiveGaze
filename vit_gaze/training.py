@@ -11,7 +11,7 @@ from . import accel
 from .dataset import (
     AugmentedSubset,
     build_dataset,
-    build_multistream_dataset,
+    build_multistream_dataset_maybe_video,
     make_augment_transform,
 )
 from .models import (
@@ -20,6 +20,7 @@ from .models import (
     create_model,
     forward_for_mode,
     forward_multistream,
+    vivit_kwargs_from_args,
 )
 from .splits import recording_kfolds, select_splits
 
@@ -97,7 +98,7 @@ def _run_training(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
     if args.input_mode == "multistream":
-        dataset = build_multistream_dataset(args)
+        dataset = build_multistream_dataset_maybe_video(args)
     else:
         use_synthetic = args.input_mode in ("synthetic", "paired")
         require_synthetic = (
@@ -163,6 +164,7 @@ def train_one_fold(args, dataset, split, device):
         use_grid=getattr(args, "use_grid", False),
         grid_size=getattr(args, "grid_size", 25),
         backbone=getattr(args, "backbone", "vit"),
+        **vivit_kwargs_from_args(args),
     ).to(device)
     if getattr(args, "compile", False):
         model = _maybe_compile(model)
@@ -499,6 +501,7 @@ def load_checkpoint(checkpoint_path, device):
         use_grid=bool(saved_args.get("use_grid", False)),
         grid_size=int(saved_args.get("grid_size", 25)),
         backbone=str(saved_args.get("backbone", "vit")),
+        **vivit_kwargs_from_args(saved_args),
     ).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
