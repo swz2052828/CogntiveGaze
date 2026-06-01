@@ -103,11 +103,11 @@ def _subsample(n, max_frames):
     return np.linspace(0, n - 1, max_frames).round().astype(int)
 
 
-def _compute_extent(gts, preds_by_method, screen_cm=None, pad_frac=0.15):
-    """Axis extent that contains gt + all preds + (optionally) the screen rect.
+def _compute_extent(gts, preds_by_method, screen_box=None, pad_frac=0.15):
+    """Axis extent containing gt + all preds + (optionally) the screen rect.
 
-    Returns ``(x0, x1, y0, y1)`` already padded. Use ``screen_cm=None`` to
-    pure-auto-fit; pass ``(W, H)`` to also keep the screen rectangle in view.
+    ``screen_box`` is ``(x0, y0, x1, y1)`` (anchored, not just (W, H)) or None.
+    Returns ``(x0, x1, y0, y1)`` already padded.
     """
     all_xy = np.concatenate([gts] + list(preds_by_method.values()), axis=0)
     finite = all_xy[np.isfinite(all_xy).all(axis=1)]
@@ -115,15 +115,36 @@ def _compute_extent(gts, preds_by_method, screen_cm=None, pad_frac=0.15):
         finite = all_xy
     xmin, ymin = float(finite[:, 0].min()), float(finite[:, 1].min())
     xmax, ymax = float(finite[:, 0].max()), float(finite[:, 1].max())
-    if screen_cm is not None:
-        sw, sh = screen_cm
-        xmin = min(xmin, 0.0)
-        xmax = max(xmax, float(sw))
-        ymin = min(ymin, 0.0)
-        ymax = max(ymax, float(sh))
+    if screen_box is not None:
+        sx0, sy0, sx1, sy1 = screen_box
+        xmin = min(xmin, sx0)
+        xmax = max(xmax, sx1)
+        ymin = min(ymin, sy0)
+        ymax = max(ymax, sy1)
     xpad = max(xmax - xmin, 1.0) * pad_frac
     ypad = max(ymax - ymin, 1.0) * pad_frac
     return xmin - xpad, xmax + xpad, ymin - ypad, ymax + ypad
+
+
+def _screen_box(gts, screen_cm):
+    """Place the screen rectangle in the data's coordinate system.
+
+    The calibration dots in ``gts`` are *shown on the screen* by construction,
+    so their bounding box is a lower bound on where the screen is. We compute
+    the GT bbox and either return it as-is (when no explicit size given) or
+    center a ``screen_cm`` (W, H) rectangle on the GT bbox center (when the
+    user wants the full physical screen drawn, even if the dots don't span it).
+    """
+    if len(gts) == 0:
+        return None
+    gx0, gy0 = float(gts[:, 0].min()), float(gts[:, 1].min())
+    gx1, gy1 = float(gts[:, 0].max()), float(gts[:, 1].max())
+    if screen_cm is None:
+        # Just bound the dots themselves.
+        return (gx0, gy0, gx1, gy1)
+    sw, sh = float(screen_cm[0]), float(screen_cm[1])
+    cx, cy = 0.5 * (gx0 + gx1), 0.5 * (gy0 + gy1)
+    return (cx - sw / 2, cy - sh / 2, cx + sw / 2, cy + sh / 2)
 
 
 def render_gif(frames, gts, preds_by_method, out_path, enroll_k,
@@ -136,23 +157,27 @@ def render_gif(frames, gts, preds_by_method, out_path, enroll_k,
     sel = _subsample(len(frames), max_frames)
     methods = list(preds_by_method.keys())
 
-    # Auto-fit axes to gt + preds, optionally keeping the screen rectangle in view.
-    x0, x1, y0, y1 = _compute_extent(gts, preds_by_method, screen_cm=screen_cm)
+    # Anchor the screen rectangle in the data's coordinate system using the gt
+    # bounding box (the calibration dots define where on the screen they appear).
+    # Works for any convention -- screen-origin (positive cm) or camera-centered
+    # (negative cm) -- without requiring the user to specify the origin offset.
+    screen_box = _screen_box(gts, screen_cm)
+    x0, x1, y0, y1 = _compute_extent(gts, preds_by_method, screen_box=screen_box)
     aspect = (y1 - y0) / max(x1 - x0, 1e-6)
     fig, ax = plt.subplots(figsize=(7, max(2.5, 7 * aspect)))
     ax.set_xlim(x0, x1)
-    ax.set_ylim(y1, y0)          # invert y so screen-top is up
+    ax.set_ylim(y0, y1)          # NOT inverted: lets either convention render naturally
     ax.set_xlabel("x (cm)")
     ax.set_ylabel("y (cm)")
     ax.set_aspect("equal")
     ax.set_title(title or "Gaze: prediction vs ground truth")
 
     # Faint screen rectangle as a reference frame.
-    if screen_cm is not None:
-        sw, sh = screen_cm
-        ax.add_patch(plt.Rectangle((0, 0), sw, sh, fill=False,
+    if screen_box is not None:
+        sx0, sy0, sx1, sy1 = screen_box
+        ax.add_patch(plt.Rectangle((sx0, sy0), sx1 - sx0, sy1 - sy0, fill=False,
                                    edgecolor="0.5", lw=1.2, ls="--", zorder=0))
-        ax.text(0, 0, " screen", va="bottom", ha="left",
+        ax.text(sx0, sy1, " screen", va="top", ha="left",
                 color="0.5", fontsize=7, zorder=0)
 
     # Static legend.
@@ -233,12 +258,13 @@ def add_visualize_args(p):
     p.add_argument("--max-frames", type=int, default=200,
                    help="Cap on animated frames (evenly subsampled if longer).")
     p.add_argument(
-        "--screen-cm", type=_screen_cm_arg, default=SCREEN_CM,
-        help="Physical screen size in cm as 'WxH' (default '54.4x30.4', the "
-             "standard 1920x1080 / 24-in monitor). Drawn as a dashed reference "
-             "rectangle; the plot axes auto-fit to include both the screen and "
-             "the data, so off-screen predictions are still visible. Pass "
-             "'none' to suppress the rectangle entirely.",
+        "--screen-cm", type=_screen_cm_arg, default=None,
+        help="Physical screen size in cm as 'WxH' (e.g. '54.4x30.4'). The "
+             "rectangle is *centered on the calibration-dot bounding box* in "
+             "data coordinates, so it works for any convention (screen-origin "
+             "positive cm or GazeCapture-style camera-centered negative cm). "
+             "Default (omitted): use the dot bounding box itself as the screen "
+             "rectangle. Pass 'none' to suppress the rectangle entirely.",
     )
     p.add_argument("--inner-steps", type=int, default=20)
     p.add_argument("--inner-lr", type=float, default=1.0)
@@ -272,11 +298,14 @@ def visualize(args):
     for name, p in preds.items():
         print(f"  {name} range:    x=[{p[:, 0].min():+.2f}, {p[:, 0].max():+.2f}] cm, "
               f"y=[{p[:, 1].min():+.2f}, {p[:, 1].max():+.2f}] cm")
-    if args.screen_cm is not None:
-        sw, sh = args.screen_cm
-        print(f"  screen-cm:     [0, {sw:.2f}] x [0, {sh:.2f}] (dashed rectangle reference)")
+    # Report where the screen rectangle ended up (data-coord-anchored, not (0,0)).
+    sb = _screen_box(gts, args.screen_cm)
+    if sb is None:
+        print("  screen:        none (no reference rectangle)")
     else:
-        print("  screen-cm:     none (no reference rectangle)")
+        sx0, sy0, sx1, sy1 = sb
+        src = "centered on gt bbox" if args.screen_cm is not None else "= gt bbox"
+        print(f"  screen rect:   x=[{sx0:+.2f}, {sx1:+.2f}], y=[{sy0:+.2f}, {sy1:+.2f}] cm ({src})")
 
     path = render_gif(frames, gts, preds, args.out, enroll_k=args.enroll_k,
                       fps=args.fps, trail=args.trail, max_frames=args.max_frames,
