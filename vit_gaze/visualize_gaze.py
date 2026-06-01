@@ -103,6 +103,29 @@ def _subsample(n, max_frames):
     return np.linspace(0, n - 1, max_frames).round().astype(int)
 
 
+def _compute_extent(gts, preds_by_method, screen_cm=None, pad_frac=0.15):
+    """Axis extent that contains gt + all preds + (optionally) the screen rect.
+
+    Returns ``(x0, x1, y0, y1)`` already padded. Use ``screen_cm=None`` to
+    pure-auto-fit; pass ``(W, H)`` to also keep the screen rectangle in view.
+    """
+    all_xy = np.concatenate([gts] + list(preds_by_method.values()), axis=0)
+    finite = all_xy[np.isfinite(all_xy).all(axis=1)]
+    if len(finite) == 0:
+        finite = all_xy
+    xmin, ymin = float(finite[:, 0].min()), float(finite[:, 1].min())
+    xmax, ymax = float(finite[:, 0].max()), float(finite[:, 1].max())
+    if screen_cm is not None:
+        sw, sh = screen_cm
+        xmin = min(xmin, 0.0)
+        xmax = max(xmax, float(sw))
+        ymin = min(ymin, 0.0)
+        ymax = max(ymax, float(sh))
+    xpad = max(xmax - xmin, 1.0) * pad_frac
+    ypad = max(ymax - ymin, 1.0) * pad_frac
+    return xmin - xpad, xmax + xpad, ymin - ypad, ymax + ypad
+
+
 def render_gif(frames, gts, preds_by_method, out_path, enroll_k,
                fps=10, trail=12, max_frames=200, screen_cm=SCREEN_CM, title=None):
     import matplotlib
@@ -110,17 +133,27 @@ def render_gif(frames, gts, preds_by_method, out_path, enroll_k,
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation, PillowWriter
 
-    W, H = screen_cm
     sel = _subsample(len(frames), max_frames)
     methods = list(preds_by_method.keys())
 
-    fig, ax = plt.subplots(figsize=(7, 7 * H / W))
-    ax.set_xlim(0, W)
-    ax.set_ylim(H, 0)            # invert y so screen-top is up
+    # Auto-fit axes to gt + preds, optionally keeping the screen rectangle in view.
+    x0, x1, y0, y1 = _compute_extent(gts, preds_by_method, screen_cm=screen_cm)
+    aspect = (y1 - y0) / max(x1 - x0, 1e-6)
+    fig, ax = plt.subplots(figsize=(7, max(2.5, 7 * aspect)))
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y1, y0)          # invert y so screen-top is up
     ax.set_xlabel("x (cm)")
     ax.set_ylabel("y (cm)")
     ax.set_aspect("equal")
     ax.set_title(title or "Gaze: prediction vs ground truth")
+
+    # Faint screen rectangle as a reference frame.
+    if screen_cm is not None:
+        sw, sh = screen_cm
+        ax.add_patch(plt.Rectangle((0, 0), sw, sh, fill=False,
+                                   edgecolor="0.5", lw=1.2, ls="--", zorder=0))
+        ax.text(0, 0, " screen", va="bottom", ha="left",
+                color="0.5", fontsize=7, zorder=0)
 
     # Static legend.
     for name in ["gt"] + methods:
@@ -171,6 +204,19 @@ def _build_dataset(args):
     return build_multistream_dataset_maybe_video(args)
 
 
+def _screen_cm_arg(s):
+    """argparse type for --screen-cm: 'WxH' (e.g. '54.4x30.4') or 'none' to disable."""
+    if s is None or s.lower() in ("none", "off", "false", ""):
+        return None
+    try:
+        w, h = s.lower().replace("x", ",").replace(" ", ",").split(",")[:2]
+        return (float(w), float(h))
+    except Exception as exc:
+        import argparse as _ap
+        raise _ap.ArgumentTypeError(
+            f"--screen-cm must be 'WxH' (e.g. '54.4x30.4') or 'none'; got {s!r}") from exc
+
+
 def add_visualize_args(p):
     """Register the visualize-tool flags on an argparse parser. Used by both
     the standalone ``__main__`` and the ``visualize`` subcommand in cli.py."""
@@ -186,6 +232,14 @@ def add_visualize_args(p):
     p.add_argument("--trail", type=int, default=12, help="Trailing positions drawn per dot.")
     p.add_argument("--max-frames", type=int, default=200,
                    help="Cap on animated frames (evenly subsampled if longer).")
+    p.add_argument(
+        "--screen-cm", type=_screen_cm_arg, default=SCREEN_CM,
+        help="Physical screen size in cm as 'WxH' (default '54.4x30.4', the "
+             "standard 1920x1080 / 24-in monitor). Drawn as a dashed reference "
+             "rectangle; the plot axes auto-fit to include both the screen and "
+             "the data, so off-screen predictions are still visible. Pass "
+             "'none' to suppress the rectangle entirely.",
+    )
     p.add_argument("--inner-steps", type=int, default=20)
     p.add_argument("--inner-lr", type=float, default=1.0)
     p.add_argument("--svr-C", type=float, default=1.0)
@@ -208,8 +262,25 @@ def visualize(args):
     dataset = _build_dataset(args)
     indices = _ordered_indices(dataset, args.rec)
     frames, gts, preds = _predict_methods(args, dataset, indices, device)
+
+    # Diagnostic ranges so the user can sanity-check the coordinate system the
+    # data actually uses against --screen-cm. If gt range is way outside the
+    # screen rect, --screen-cm probably needs adjusting to your dataset's
+    # actual screen size.
+    print(f"  gt range:      x=[{gts[:, 0].min():+.2f}, {gts[:, 0].max():+.2f}] cm, "
+          f"y=[{gts[:, 1].min():+.2f}, {gts[:, 1].max():+.2f}] cm")
+    for name, p in preds.items():
+        print(f"  {name} range:    x=[{p[:, 0].min():+.2f}, {p[:, 0].max():+.2f}] cm, "
+              f"y=[{p[:, 1].min():+.2f}, {p[:, 1].max():+.2f}] cm")
+    if args.screen_cm is not None:
+        sw, sh = args.screen_cm
+        print(f"  screen-cm:     [0, {sw:.2f}] x [0, {sh:.2f}] (dashed rectangle reference)")
+    else:
+        print("  screen-cm:     none (no reference rectangle)")
+
     path = render_gif(frames, gts, preds, args.out, enroll_k=args.enroll_k,
                       fps=args.fps, trail=args.trail, max_frames=args.max_frames,
+                      screen_cm=args.screen_cm,
                       title=f"Recording {args.rec}: gaze vs ground truth")
     print(f"Wrote {path} ({len(frames)} frames, methods={list(preds.keys())})")
     return path
