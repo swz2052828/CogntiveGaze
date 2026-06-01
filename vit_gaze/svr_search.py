@@ -86,6 +86,121 @@ def pso(fitness, lb, ub, pop=30, iters=50, w=0.7, c1=1.5, c2=1.5, seed=0,
     return gbest, gbest_f, history
 
 
+def jaya(fitness, lb, ub, pop=30, iters=50, seed=0, progress=None):
+    """JAYA (Rao, 2016): parameter-less optimizer. Each candidate moves toward
+    the best and away from the worst solution; the move is accepted only if it
+    improves. Minimizes ``fitness(x)``. Returns ``(best_x, best_f, history)``.
+    """
+    rng = np.random.default_rng(seed)
+    dim = len(lb)
+    lb = np.asarray(lb, dtype=float)
+    ub = np.asarray(ub, dtype=float)
+    x = lb + rng.random((pop, dim)) * (ub - lb)
+    f = np.array([float(fitness(xi)) for xi in x])
+    best_i = int(np.argmin(f))
+    best, best_f = x[best_i].copy(), float(f[best_i])
+    history = [best_f]
+    if progress is not None:
+        progress(0, best_f, best)
+    for it in range(1, iters + 1):
+        worst = x[int(np.argmax(f))]
+        cur_best = x[int(np.argmin(f))]
+        r1 = rng.random((pop, dim))
+        r2 = rng.random((pop, dim))
+        cand = x + r1 * (cur_best - np.abs(x)) - r2 * (worst - np.abs(x))
+        cand = np.clip(cand, lb, ub)
+        cand_f = np.array([float(fitness(xi)) for xi in cand])
+        improved = cand_f < f
+        x[improved] = cand[improved]
+        f[improved] = cand_f[improved]
+        bi = int(np.argmin(f))
+        if f[bi] < best_f:
+            best_f, best = float(f[bi]), x[bi].copy()
+        history.append(best_f)
+        if progress is not None:
+            progress(it, best_f, best)
+    return best, best_f, history
+
+
+def _roulette(weights, rng):
+    """Roulette-wheel index selection proportional to non-negative ``weights``."""
+    total = weights.sum()
+    if total <= 0:
+        return int(rng.integers(len(weights)))
+    r = rng.random() * total
+    idx = int(np.searchsorted(np.cumsum(weights), r))
+    return min(idx, len(weights) - 1)
+
+
+def mvo(fitness, lb, ub, pop=30, iters=50, seed=0,
+        wep_min=0.2, wep_max=1.0, p=6.0, progress=None):
+    """Multi-Verse Optimizer (Mirjalili et al., 2016). Universes exchange
+    objects via white/black holes (roulette by inflation rate = fitness) and
+    teleport toward the best universe via wormholes whose existence probability
+    (WEP) rises and travelling-distance rate (TDR) shrinks over iterations.
+    Minimizes ``fitness(x)``. Returns ``(best_x, best_f, history)``.
+    """
+    rng = np.random.default_rng(seed)
+    dim = len(lb)
+    lb = np.asarray(lb, dtype=float)
+    ub = np.asarray(ub, dtype=float)
+    univ = lb + rng.random((pop, dim)) * (ub - lb)
+    f = np.array([float(fitness(xi)) for xi in univ])
+    best_i = int(np.argmin(f))
+    best, best_f = univ[best_i].copy(), float(f[best_i])
+    history = [best_f]
+    if progress is not None:
+        progress(0, best_f, best)
+    for it in range(1, iters + 1):
+        wep = wep_min + it * ((wep_max - wep_min) / iters)
+        tdr = 1.0 - (it ** (1.0 / p)) / (iters ** (1.0 / p))
+
+        order = np.argsort(f)                       # ascending: best first
+        sorted_univ = univ[order]
+        sorted_f = f[order]
+        # Normalized inflation in [0,1]; higher = worse universe.
+        rng_f = sorted_f.max() - sorted_f.min()
+        norm_inf = (sorted_f - sorted_f.min()) / (rng_f + 1e-12)
+        # White-hole source weights: better (lower-fitness) universes more likely.
+        wh_weights = (1.0 - norm_inf) + 1e-6
+
+        new = univ.copy()
+        for i in range(pop):
+            for j in range(dim):
+                if rng.random() < norm_inf[i]:
+                    # black hole receives an object from a roulette-selected
+                    # (good) universe's white hole.
+                    src = _roulette(wh_weights, rng)
+                    new[i, j] = sorted_univ[src, j]
+                if rng.random() < wep:
+                    span = (ub[j] - lb[j]) * rng.random() + lb[j]
+                    if rng.random() < 0.5:
+                        new[i, j] = best[j] + tdr * span
+                    else:
+                        new[i, j] = best[j] - tdr * span
+        univ = np.clip(new, lb, ub)
+        f = np.array([float(fitness(xi)) for xi in univ])
+        bi = int(np.argmin(f))
+        if f[bi] < best_f:
+            best_f, best = float(f[bi]), univ[bi].copy()
+        history.append(best_f)
+        if progress is not None:
+            progress(it, best_f, best)
+    return best, best_f, history
+
+
+def optimize(method, fitness, lb, ub, pop, iters, seed, progress=None):
+    """Dispatch to the requested swarm optimizer (Zhu et al. use MVO/JAYA/PSO)."""
+    method = method.lower()
+    if method == "pso":
+        return pso(fitness, lb, ub, pop=pop, iters=iters, seed=seed, progress=progress)
+    if method == "jaya":
+        return jaya(fitness, lb, ub, pop=pop, iters=iters, seed=seed, progress=progress)
+    if method == "mvo":
+        return mvo(fitness, lb, ub, pop=pop, iters=iters, seed=seed, progress=progress)
+    raise ValueError(f"Unknown optimizer {method!r}; choose pso / mvo / jaya.")
+
+
 @torch.no_grad()
 def _cache(model, dataset, indices, gaze_mean, gaze_std, device,
            batch_size, num_workers, want_features):
@@ -189,8 +304,10 @@ def _run_svrsearch(args):
     model, gaze_mean, gaze_std = _load_base_checkpoint(args.base_checkpoint, device)
 
     want_features = (getattr(args, "space", "prediction") == "embedding")
+    optimizer_name = getattr(args, "optimizer", "pso").lower()
     log(f"Device: {device}")
-    log(f"svrsearch space={'embedding' if want_features else 'prediction'} "
+    log(f"svrsearch optimizer={optimizer_name} "
+        f"space={'embedding' if want_features else 'prediction'} "
         f"K={args.k} trials={args.trials} pop={args.pop} iters={args.iters} "
         f"bounds=[{list(DEFAULT_LB)}, {list(DEFAULT_UB)}]")
 
@@ -216,17 +333,19 @@ def _run_svrsearch(args):
 
         def progress(it, best_f, best_x):
             if it == 0 or it == args.iters or it % max(1, args.iters // 10) == 0:
-                log(f"Fold {fold} pso iter {it}/{args.iters} best_err={best_f:.4f} "
-                    f"C={best_x[0]:.4f} gamma={best_x[1]:.6f} epsilon={best_x[2]:.4f}")
+                log(f"Fold {fold} {optimizer_name} iter {it}/{args.iters} "
+                    f"best_err={best_f:.4f} C={best_x[0]:.4f} "
+                    f"gamma={best_x[1]:.6f} epsilon={best_x[2]:.4f}")
 
-        best_x, best_f, _ = pso(
-            fitness, DEFAULT_LB, DEFAULT_UB,
+        best_x, best_f, _ = optimize(
+            optimizer_name, fitness, DEFAULT_LB, DEFAULT_UB,
             pop=args.pop, iters=args.iters, seed=args.seed + fold, progress=progress)
-        log(f"Fold {fold} done best_err={best_f:.4f} "
+        log(f"Fold {fold} done optimizer={optimizer_name} best_err={best_f:.4f} "
             f"C={best_x[0]:.6f} gamma={best_x[1]:.6f} epsilon={best_x[2]:.6f}")
         out[fold] = {"C": float(best_x[0]), "gamma": float(best_x[1]),
                      "epsilon": float(best_x[2]), "best_err": float(best_f),
-                     "space": "embedding" if want_features else "prediction"}
+                     "space": "embedding" if want_features else "prediction",
+                     "optimizer": optimizer_name}
 
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(out, indent=2))

@@ -165,6 +165,13 @@ def build_parser():
     train_parser.add_argument("--lr", type=float, default=1e-4)
     train_parser.add_argument("--weight-decay", type=float, default=1e-4)
     train_parser.add_argument(
+        "--loss-scale", type=float, default=None,
+        help="Fixed multiplier on the regression loss (acts like lr*scale for "
+             "this backbone). Default: 4.0 for --backbone affnet (matching Zhu "
+             "et al.'s `loss_op(gaze, label) * 4`), 1.0 otherwise. The reported "
+             "train loss is left unscaled so it stays comparable across backbones.",
+    )
+    train_parser.add_argument(
         "--lr-scheduler",
         choices=("none", "cosine", "step"),
         default="none",
@@ -449,8 +456,17 @@ def build_parser():
                             help="Calibration frames per subject during HP search.")
     svr_parser.add_argument("--trials", type=int, default=3,
                             help="Random support/query draws per subject per fitness eval.")
-    svr_parser.add_argument("--pop", type=int, default=30, help="PSO population size.")
-    svr_parser.add_argument("--iters", type=int, default=50, help="PSO outer iterations.")
+    svr_parser.add_argument(
+        "--optimizer", choices=("pso", "mvo", "jaya"), default="pso",
+        help="Swarm optimizer for the HP search. pso (default) = Particle Swarm; "
+             "mvo = Multi-Verse Optimizer; jaya = JAYA (parameter-less). All "
+             "three are the algorithms Zhu et al. report in "
+             "SwarmIntelligentCalibration; results are written with the chosen "
+             "optimizer recorded in the JSON.",
+    )
+    svr_parser.add_argument("--pop", type=int, default=30,
+                            help="Population/universe size (pso/mvo/jaya).")
+    svr_parser.add_argument("--iters", type=int, default=50, help="Outer iterations.")
     svr_parser.add_argument("--batch-size", type=int, default=64)
     svr_parser.add_argument("--num-workers", type=int, default=4)
     svr_parser.add_argument("--folds", type=int, default=5)

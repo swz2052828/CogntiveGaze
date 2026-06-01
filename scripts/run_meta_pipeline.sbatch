@@ -17,7 +17,7 @@
 #SBATCH --array=0-4
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=48G
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=logs/meta_%A_fold%a.out
 #SBATCH --error=logs/meta_%A_fold%a.err
 
@@ -52,6 +52,7 @@
 : "${SVR_TUNE:=1}"
 : "${SVR_POP:=30}"
 : "${SVR_ITERS:=50}"
+: "${SVR_OPTIMIZER:=pso}"   # pso | mvo | jaya (Zhu et al. swarm optimizers)
 : "${SVR_EMBED:=1}"
 : "${FC_FT:=1}"
 : "${FC_FT_STEPS:=20}"
@@ -116,6 +117,12 @@ echo "[repo] HEAD: $(git rev-parse --short HEAD)  branch: $(git rev-parse --abbr
 
 set -euo pipefail
 
+# Format seconds as "Nm SSs" and print a stage-timing line.
+_fmt() { printf '%dm%02ds' $(( $1 / 60 )) $(( $1 % 60 )); }
+_stage_done() {  # $1 = stage label, $2 = start SECONDS
+  echo "[fold $FOLD seed $SEED] TIMING $1 took $(_fmt $(( SECONDS - $2 )))"
+}
+
 # ==============================================================================
 # Per (fold, seed) pipeline
 # ==============================================================================
@@ -152,15 +159,20 @@ for SEED in $SEEDS; do
   echo "[fold $FOLD seed $SEED] starting full pipeline"
   echo "===================================================="
 
+  _pipe_t0=$SECONDS
+
   # Stage 1: base train
+  _t=$SECONDS
   if [[ -f "$BASE_CKPT" ]]; then
     echo "[fold $FOLD seed $SEED] stage 1 base: skip ($BASE_CKPT exists)"
   else
     $CLI train $COMMON_TRAIN --out-path "$SBD" \
       --log-file "$PIPE_LOGS/base_seed${SEED}_fold${FOLD}.log"
   fi
+  _stage_done "stage1_base" $_t
 
   # Stage 2: subject-adv train
+  _t=$SECONDS
   if [[ -f "$ADV_CKPT" ]]; then
     echo "[fold $FOLD seed $SEED] stage 2 adv: skip ($ADV_CKPT exists)"
   else
@@ -168,8 +180,10 @@ for SEED in $SEEDS; do
       --subject-adv --adv-weight $ADV_WEIGHT \
       --log-file "$PIPE_LOGS/adv_seed${SEED}_fold${FOLD}.log"
   fi
+  _stage_done "stage2_adv" $_t
 
   # Stage 3: metatrain on BASE
+  _t=$SECONDS
   if [[ -f "$META_CKPT" ]]; then
     echo "[fold $FOLD seed $SEED] stage 3 meta(base): skip"
   else
@@ -181,8 +195,10 @@ for SEED in $SEEDS; do
       --fold-index $FOLD --seed $SEED --out-path "$SMD" \
       --log-file "$PIPE_LOGS/meta_on_base_seed${SEED}_fold${FOLD}.log"
   fi
+  _stage_done "stage3_meta_base" $_t
 
   # Stage 4: metatrain on ADV
+  _t=$SECONDS
   if [[ -f "$META_ADV_CKPT" ]]; then
     echo "[fold $FOLD seed $SEED] stage 4 meta(adv): skip"
   else
@@ -194,12 +210,15 @@ for SEED in $SEEDS; do
       --fold-index $FOLD --seed $SEED --out-path "$SAMD" \
       --log-file "$PIPE_LOGS/meta_on_adv_seed${SEED}_fold${FOLD}.log"
   fi
+  _stage_done "stage4_meta_adv" $_t
 
-  # Stage 5a: PSO svrsearch (prediction space)
+  # Stage 5a: svrsearch (prediction space)
+  _t=$SECONDS
   SVR_HP="$OUT_ROOT/svr_hp_seed${SEED}_fold${FOLD}.json"
   if [[ "$SVR_TUNE" == "1" ]]; then
     if [[ ! -f "$SVR_HP" ]]; then
       $CLI svrsearch $COMMON_DATA --base-checkpoint "$BASE_CKPT" --space prediction \
+        --optimizer $SVR_OPTIMIZER \
         --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
         --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
         --fold-index $FOLD --seed $SEED --json-out "$SVR_HP" \
@@ -211,12 +230,15 @@ print(hp['C'], hp['gamma'], hp['epsilon'])")
   else
     SVR_C=1.0; SVR_GAMMA=scale; SVR_EPS=0.1
   fi
+  _stage_done "stage5a_svrsearch_pred" $_t
 
-  # Stage 5b: PSO svrsearch (embedding space)
+  # Stage 5b: svrsearch (embedding space)
+  _t=$SECONDS
   SVR_EMBED_HP="$OUT_ROOT/svr_embed_hp_seed${SEED}_fold${FOLD}.json"
   if [[ "$SVR_EMBED" == "1" && "$SVR_TUNE" == "1" ]]; then
     if [[ ! -f "$SVR_EMBED_HP" ]]; then
       $CLI svrsearch $COMMON_DATA --base-checkpoint "$BASE_CKPT" --space embedding \
+        --optimizer $SVR_OPTIMIZER \
         --k $META_SUPPORT --trials 3 --pop $SVR_POP --iters $SVR_ITERS \
         --batch-size $BATCH_SIZE --num-workers $NUM_WORKERS \
         --fold-index $FOLD --seed $SEED --json-out "$SVR_EMBED_HP" \
@@ -228,8 +250,10 @@ print(hp['C'], hp['gamma'], hp['epsilon'])")
   else
     SVR_E_C=1.0; SVR_E_G=scale; SVR_E_E=0.1
   fi
+  _stage_done "stage5b_svrsearch_embed" $_t
 
   # Stage 5c: metacompare K-sweep
+  _t=$SECONDS
   EXTRA=""
   [[ "$FC_FT" == "1" ]] && EXTRA="$EXTRA --fc-ft --fc-ft-steps $FC_FT_STEPS --fc-ft-lr $FC_FT_LR --fc-ft-weight-decay $FC_FT_WD"
   [[ "$SVR_EMBED" == "1" ]] && EXTRA="$EXTRA --svr-embed --svr-embed-C $SVR_E_C --svr-embed-gamma $SVR_E_G --svr-embed-eps $SVR_E_E"
@@ -247,7 +271,9 @@ print(hp['C'], hp['gamma'], hp['epsilon'])")
       --fold-index $FOLD --seed $SEED --csv-out "$CSV_OUT" \
       --log-file "$PIPE_LOGS/metacompare_K${K}_seed${SEED}_fold${FOLD}.log"
   done
+  _stage_done "stage5c_metacompare" $_t
 
+  _stage_done "TOTAL_pipeline" $_pipe_t0
   echo "[fold $FOLD seed $SEED] done."
 done   # end seed loop
 

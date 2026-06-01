@@ -177,6 +177,17 @@ def train_one_fold(args, dataset, split, device):
     amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
     scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
     log(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
+
+    # Loss-scale: a fixed multiplier on the regression loss (≈ lr * scale for
+    # that backbone). Zhu et al. train AFFNet with loss * 4; we default to 4 for
+    # affnet and 1 otherwise unless --loss-scale overrides it. The *reported*
+    # train loss is left unscaled so it stays comparable across backbones.
+    loss_scale = getattr(args, "loss_scale", None)
+    if loss_scale is None:
+        loss_scale = 4.0 if getattr(args, "backbone", "vit") == "affnet" else 1.0
+    loss_scale = float(loss_scale)
+    if loss_scale != 1.0:
+        log(f"Fold {fold} loss_scale={loss_scale}")
     scheduler = _make_scheduler(optimizer, args)
     if scheduler is not None:
         log(f"Fold {fold} lr_scheduler={getattr(args, 'lr_scheduler', 'none')}")
@@ -244,6 +255,7 @@ def train_one_fold(args, dataset, split, device):
             amp_enabled=amp_enabled,
             amp_dtype=amp_dtype,
             adv=adv,
+            loss_scale=loss_scale,
         )
         val_loss, val_error = evaluate(
             model=model,
@@ -333,6 +345,7 @@ def train_epoch(
     amp_enabled=False,
     amp_dtype=None,
     adv=None,
+    loss_scale=1.0,
 ):
     model.train()
     total_loss = 0.0
@@ -352,10 +365,13 @@ def train_epoch(
                 pred, batch_size = _predict(model, batch, input_mode, device)
             target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
             reg_loss = F.smooth_l1_loss(pred, target)
-            loss = reg_loss
+            # Scale the loss used for backprop (≈ lr * scale); keep reg_loss
+            # itself for reporting so logged train loss is comparable across
+            # backbones regardless of the scale.
+            loss = reg_loss * loss_scale
             if adv is not None:
                 adv_loss, cur_lambda = adv.loss(batch["rec"])
-                loss = reg_loss + adv_loss
+                loss = loss + adv_loss
                 adv_loss_val = adv_loss.item()
 
         if scaler is not None:
