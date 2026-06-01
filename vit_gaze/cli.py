@@ -5,6 +5,7 @@ from .meta import meta_train
 from .metacompare import metacompare
 from .svr_search import svrsearch
 from .training import train
+from .visualize_gaze import add_visualize_args, visualize
 
 
 def add_common_args(parser):
@@ -476,6 +477,20 @@ def build_parser():
     svr_parser.add_argument("--json-out", default=None,
                             help="Write the tuned per-fold hyperparameters to this JSON file.")
 
+    viz_parser = subparsers.add_parser(
+        "visualize",
+        help="Animate a recording's gaze trace (ground truth + base / SVR / "
+             "meta-calibrated predictions) as a GIF. The first --enroll-k "
+             "frames are time-ordered and shaded as the calibration phase, so "
+             "the before/after-calibration effect is visible.",
+    )
+    add_common_args(viz_parser)
+    viz_parser.add_argument(
+        "--input-mode", choices=("multistream",), default="multistream",
+        help="The visualize tool is multistream-only.",
+    )
+    add_visualize_args(viz_parser)
+
     explain_parser = subparsers.add_parser("explain")
     add_common_args(explain_parser)
     explain_parser.add_argument("--checkpoint", required=True)
@@ -521,6 +536,8 @@ def main():
         meta_train(args)
     elif args.command == "metacompare":
         metacompare(args)
+    elif args.command == "visualize":
+        visualize(args)
     elif args.command == "svrsearch":
         svrsearch(args)
     elif args.command == "explain":

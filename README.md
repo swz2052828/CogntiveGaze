@@ -276,6 +276,47 @@ python -m gaze_dynamics.export ... \
 `--inner-steps` / `--inner-lr` override the values baked into the checkpoint
 if you want to tune enrollment without retraining.
 
+### Animating gaze predictions (`visualize`)
+
+To *see* where a prediction is wrong (and how calibration corrects it), the
+`visualize` subcommand renders one recording's gaze trace on the screen
+rectangle as a GIF — ground-truth dot + base / SVR / meta predictions, each
+with a fading trail and an error vector to ground truth. The first
+`--enroll-k` frames are shaded as the calibration phase, so the before/after
+effect is visible:
+
+```bash
+python vit_gaze_segmenter.py visualize \
+  --data-path ../datasets/ProcessedData --eye-path ../datasets/ProcessedData \
+  --mean-path meanno7 --input-mode multistream --use-grid \
+  --base-checkpoint runs/.../base/seed42/fold2_best_mobilenet_v3_gaze_segmenter.pth \
+  --meta-checkpoint runs/.../meta_on_base/seed42/fold2_meta_film_mobilenet_v3_gaze.pth \
+  --rec 6 --methods base,svr,meta --enroll-k 16 \
+  --svr-C 226.7 --svr-gamma 0.001 --svr-eps 0.094 \
+  --out gaze_rec6.gif --fps 10 --max-frames 200
+```
+
+Pick `--rec` from a **held-out** recording for the fold whose checkpoints
+you're loading (e.g. for the fold-2 checkpoints, rec 6, 22, or 12) — using a
+training recording would show optimistic in-distribution predictions. The
+tool uses the first-K time-ordered protocol (above), so it shows what
+deployment would actually look like with a K-second enrollment phase.
+
+### A note on enrollment protocols
+
+We use **two complementary K-shot protocols** in this codebase, and which one
+you reach for matters for how the result is interpreted:
+
+| Protocol | Where it's used | What it answers |
+|---|---|---|
+| **Random K** | `metacompare`, `metatrain`, `svrsearch` | "Given any K labelled frames from a session, how do calibration methods compare in inherent capacity?" — the **method-comparison** view; isolates the calibration recipe from real-world enrollment confounds. |
+| **First-K time-ordered** | `gaze_dynamics/export.py --meta`, `vit_gaze.visualize_gaze` | "Given a 1-second enrollment phase at session start, what does deployment look like?" — the **deployment-faithful** view; matches how a real app would calibrate. |
+
+The random-K protocol gives every method the same (idealized) K labelled
+points, which makes method comparisons paired and clean (the basis of the
+paired Wilcoxon tests in the K-sweep figure). The first-K protocol is what
+you'd ship; report both when writing up.
+
 ### Comparing base / SVR / meta at matched K (`metacompare`)
 
 The result that justifies the meta approach in a writeup is **meta beats SVR

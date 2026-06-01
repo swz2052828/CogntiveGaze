@@ -171,10 +171,9 @@ def _build_dataset(args):
     return build_multistream_dataset_maybe_video(args)
 
 
-def main():
-    import torch
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+def add_visualize_args(p):
+    """Register the visualize-tool flags on an argparse parser. Used by both
+    the standalone ``__main__`` and the ``visualize`` subcommand in cli.py."""
     p.add_argument("--base-checkpoint", required=True)
     p.add_argument("--meta-checkpoint", default=None)
     p.add_argument("--methods", default="base,svr,meta",
@@ -192,7 +191,36 @@ def main():
     p.add_argument("--svr-C", type=float, default=1.0)
     p.add_argument("--svr-eps", type=float, default=0.1)
     p.add_argument("--svr-gamma", default="scale")
-    # dataset location (mirrors export.py)
+    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--num-workers", type=int, default=4)
+    p.add_argument("--device", default=None)
+
+
+def visualize(args):
+    """Entry point used by both the standalone script and cli.py."""
+    import torch
+    try:
+        args.svr_gamma = float(args.svr_gamma)
+    except (TypeError, ValueError):
+        pass  # 'scale' / 'auto'
+
+    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    dataset = _build_dataset(args)
+    indices = _ordered_indices(dataset, args.rec)
+    frames, gts, preds = _predict_methods(args, dataset, indices, device)
+    path = render_gif(frames, gts, preds, args.out, enroll_k=args.enroll_k,
+                      fps=args.fps, trail=args.trail, max_frames=args.max_frames,
+                      title=f"Recording {args.rec}: gaze vs ground truth")
+    print(f"Wrote {path} ({len(frames)} frames, methods={list(preds.keys())})")
+    return path
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_visualize_args(p)
+    # Dataset location flags duplicated here so the standalone script is
+    # self-sufficient; the cli.py subcommand uses add_common_args instead.
     p.add_argument("--input-mode", choices=("multistream",), default="multistream")
     p.add_argument("--backbone", default=None)
     p.add_argument("--data-path", required=True)
@@ -206,24 +234,7 @@ def main():
     p.add_argument("--eye-size", type=int, default=224)
     p.add_argument("--grid-size", type=int, default=25)
     p.add_argument("--use-grid", action="store_true")
-    p.add_argument("--batch-size", type=int, default=64)
-    p.add_argument("--num-workers", type=int, default=4)
-    p.add_argument("--device", default=None)
-    args = p.parse_args()
-
-    try:
-        args.svr_gamma = float(args.svr_gamma)
-    except ValueError:
-        pass  # 'scale' / 'auto'
-
-    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
-    dataset = _build_dataset(args)
-    indices = _ordered_indices(dataset, args.rec)
-    frames, gts, preds = _predict_methods(args, dataset, indices, device)
-    path = render_gif(frames, gts, preds, args.out, enroll_k=args.enroll_k,
-                      fps=args.fps, trail=args.trail, max_frames=args.max_frames,
-                      title=f"Recording {args.rec}: gaze vs ground truth")
-    print(f"Wrote {path} ({len(frames)} frames, methods={list(preds.keys())})")
+    visualize(p.parse_args())
 
 
 if __name__ == "__main__":
