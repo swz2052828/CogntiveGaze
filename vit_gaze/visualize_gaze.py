@@ -68,21 +68,26 @@ def _predict_methods(args, dataset, indices, device):
         out["base"] = base_preds
 
     K = args.enroll_k
+    if len(indices) <= K:
+        raise ValueError(f"Recording has {len(indices)} frames <= enroll-k {K}.")
+    # Choose the calibration (support) frames once and use them for BOTH svr and
+    # meta, so the overlay is a fair head-to-head on identical enrollment.
+    sup_rows = _select_support(gts, K, getattr(args, "enroll_mode", "first"),
+                               seed=getattr(args, "seed", 42))
+    out["_support_rows"] = sup_rows   # consumed by render to mark calibration frames
+    print(f"  enroll-mode:   {getattr(args, 'enroll_mode', 'first')} (K={K})")
+    sup_lo = base_preds[sup_rows].min(axis=0)
+    sup_hi = base_preds[sup_rows].max(axis=0)
+    print(f"  support range (base_preds at support frames): "
+          f"x=[{sup_lo[0]:+.2f}, {sup_hi[0]:+.2f}], "
+          f"y=[{sup_lo[1]:+.2f}, {sup_hi[1]:+.2f}] cm "
+          f"(tiny range => degenerate enrollment, SVR can't extrapolate)")
+
     if "svr" in methods:
-        if len(indices) <= K:
-            raise ValueError(f"Recording has {len(indices)} frames <= enroll-k {K}.")
         svr_C, svr_g, svr_e = _resolve_svr_hp(args)
         print(f"  svr hp:        C={svr_C} gamma={svr_g} epsilon={svr_e}")
-        # Range of the support set the SVR sees: if pred range is tiny here
-        # (e.g. the first K enrollment frames all look at one dot), the SVR
-        # can't extrapolate beyond it -- the output will look 'small-scale'.
-        sup_lo = base_preds[:K].min(axis=0)
-        sup_hi = base_preds[:K].max(axis=0)
-        print(f"  svr support range (base_preds[:K]): "
-              f"x=[{sup_lo[0]:+.2f}, {sup_hi[0]:+.2f}], "
-              f"y=[{sup_lo[1]:+.2f}, {sup_hi[1]:+.2f}] cm")
         svr = SVRCalibrator(C=svr_C, epsilon=svr_e, gamma=svr_g).fit(
-            base_preds[:K], gts[:K])
+            base_preds[sup_rows], gts[sup_rows])
         out["svr"] = svr.transform(base_preds)
 
     if "meta" in methods:
@@ -94,8 +99,9 @@ def _predict_methods(args, dataset, indices, device):
             meta_model, dataset, indices, meta_mean, meta_std, device,
             args.batch_size, args.num_workers)
         feats = feats_t.to(device)
-        f_sup = feats[:K]
-        y_sup = normalize_gaze(gts_m[:K].to(device), meta_mean, meta_std)
+        sup_t = torch.as_tensor(sup_rows, device=device)
+        f_sup = feats[sup_t]
+        y_sup = normalize_gaze(gts_m[sup_t.cpu()].to(device), meta_mean, meta_std)
         fast = _adapt_meta(meta_model, adapter, list(adapter.parameters()),
                            f_sup, y_sup, args.inner_lr, args.inner_steps)
         with torch.no_grad():
@@ -105,6 +111,37 @@ def _predict_methods(args, dataset, indices, device):
         out["meta"] = preds
 
     return frames, gts, out
+
+
+def _select_support(gts, k, mode, seed=42):
+    """Pick K calibration-frame row indices (into the time-ordered arrays).
+
+    - first  : the first K frames (realistic enrollment; may be a single
+               fixation, which starves SVR of spatial coverage).
+    - random : K frames uniformly at random over the whole recording (matches
+               metacompare's protocol; gives SVR good spatial coverage).
+    - spread : farthest-point sampling on the ground-truth positions, i.e. K
+               frames whose gaze targets are maximally spread over the screen
+               (best-case calibration coverage).
+    """
+    n = len(gts)
+    k = min(k, n)
+    if mode == "first":
+        return np.arange(k)
+    if mode == "random":
+        rng = np.random.default_rng(seed)
+        return np.sort(rng.choice(n, size=k, replace=False))
+    if mode == "spread":
+        # Greedy farthest-point sampling on gt xy.
+        rng = np.random.default_rng(seed)
+        chosen = [int(rng.integers(n))]
+        d = np.linalg.norm(gts - gts[chosen[0]], axis=1)
+        while len(chosen) < k:
+            nxt = int(np.argmax(d))
+            chosen.append(nxt)
+            d = np.minimum(d, np.linalg.norm(gts - gts[nxt], axis=1))
+        return np.sort(np.array(chosen))
+    raise ValueError(f"--enroll-mode must be first/random/spread, got {mode!r}")
 
 
 def _subsample(n, max_frames):
@@ -164,6 +201,11 @@ def render_gif(frames, gts, preds_by_method, out_path, enroll_k,
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation, PillowWriter
 
+    # Support-frame row indices are passed alongside the method predictions;
+    # pull them out so they don't get treated as a plotted method.
+    support_rows = preds_by_method.pop("_support_rows", None)
+    support_set = set(int(r) for r in support_rows) if support_rows is not None else set()
+
     sel = _subsample(len(frames), max_frames)
     methods = list(preds_by_method.keys())
 
@@ -212,9 +254,10 @@ def render_gif(frames, gts, preds_by_method, out_path, enroll_k,
         lo = max(0, i - trail)
         gt_trail.set_data(gts[lo:i + 1, 0], gts[lo:i + 1, 1])
         gt_pt.set_offsets([gts[i]])
+        is_cal = i in support_set
         lines = [f"frame {frames[i]}"]
-        if i < enroll_k:
-            lines.append("[CALIBRATING]")
+        if is_cal:
+            lines.append("[CALIBRATION FRAME]")
         for m in methods:
             p = preds_by_method[m]
             pred_pts[m].set_offsets([p[i]])
@@ -222,8 +265,8 @@ def render_gif(frames, gts, preds_by_method, out_path, enroll_k,
             trail_lines[m].set_data(p[lo:i + 1, 0], p[lo:i + 1, 1])
             e = float(np.hypot(p[i, 0] - gts[i, 0], p[i, 1] - gts[i, 1]))
             lines.append(f"{m:>5}: {e:5.2f} cm")
-        # shade background during the enrollment phase
-        ax.set_facecolor("#fff3e0" if i < enroll_k else "white")
+        # highlight background on calibration (support) frames
+        ax.set_facecolor("#fff3e0" if is_cal else "white")
         info.set_text("\n".join(lines))
         return [gt_pt, gt_trail, info] + list(pred_pts.values()) \
             + list(err_lines.values()) + list(trail_lines.values())
@@ -291,7 +334,19 @@ def add_visualize_args(p):
     p.add_argument("--rec", type=int, required=True, help="Recording id to animate.")
     p.add_argument("--out", default="gaze.gif")
     p.add_argument("--enroll-k", type=int, default=16,
-                   help="Calibration frames (first K, time-ordered).")
+                   help="Number of calibration (support) frames.")
+    p.add_argument(
+        "--enroll-mode", choices=("first", "random", "spread"), default="first",
+        help="How the K calibration frames are chosen. first (default) = the "
+             "first K time-ordered frames (realistic enrollment; may be a single "
+             "fixation that starves SVR of spatial coverage). random = K random "
+             "frames over the whole recording (matches metacompare; gives SVR "
+             "good coverage). spread = farthest-point sampling on gt positions "
+             "(best-case calibration coverage). Both svr and meta use the same "
+             "chosen frames for a fair head-to-head.",
+    )
+    p.add_argument("--seed", type=int, default=42,
+                   help="Seed for --enroll-mode random/spread frame selection.")
     p.add_argument("--fps", type=int, default=10)
     p.add_argument("--trail", type=int, default=12, help="Trailing positions drawn per dot.")
     p.add_argument("--max-frames", type=int, default=200,
@@ -363,6 +418,8 @@ def visualize(args):
     print(f"  gt range:      x=[{gts[:, 0].min():+.2f}, {gts[:, 0].max():+.2f}] cm, "
           f"y=[{gts[:, 1].min():+.2f}, {gts[:, 1].max():+.2f}] cm")
     for name, p in preds.items():
+        if name.startswith("_"):
+            continue   # internal (e.g. _support_rows), not a plotted method
         print(f"  {name} range:    x=[{p[:, 0].min():+.2f}, {p[:, 0].max():+.2f}] cm, "
               f"y=[{p[:, 1].min():+.2f}, {p[:, 1].max():+.2f}] cm")
     # Report where the screen rectangle ended up (data-coord-anchored, not (0,0)).
