@@ -71,7 +71,17 @@ def _predict_methods(args, dataset, indices, device):
     if "svr" in methods:
         if len(indices) <= K:
             raise ValueError(f"Recording has {len(indices)} frames <= enroll-k {K}.")
-        svr = SVRCalibrator(C=args.svr_C, epsilon=args.svr_eps, gamma=args.svr_gamma).fit(
+        svr_C, svr_g, svr_e = _resolve_svr_hp(args)
+        print(f"  svr hp:        C={svr_C} gamma={svr_g} epsilon={svr_e}")
+        # Range of the support set the SVR sees: if pred range is tiny here
+        # (e.g. the first K enrollment frames all look at one dot), the SVR
+        # can't extrapolate beyond it -- the output will look 'small-scale'.
+        sup_lo = base_preds[:K].min(axis=0)
+        sup_hi = base_preds[:K].max(axis=0)
+        print(f"  svr support range (base_preds[:K]): "
+              f"x=[{sup_lo[0]:+.2f}, {sup_hi[0]:+.2f}], "
+              f"y=[{sup_lo[1]:+.2f}, {sup_hi[1]:+.2f}] cm")
+        svr = SVRCalibrator(C=svr_C, epsilon=svr_e, gamma=svr_g).fit(
             base_preds[:K], gts[:K])
         out["svr"] = svr.transform(base_preds)
 
@@ -229,6 +239,35 @@ def _build_dataset(args):
     return build_multistream_dataset_maybe_video(args)
 
 
+def _resolve_svr_hp(args):
+    """Pick (C, gamma, epsilon) for SVR: --svr-hp-json beats explicit flags.
+
+    The svrsearch output JSON looks like ``{"<fold>": {"C": ..., "gamma": ...,
+    "epsilon": ..., ...}}``. ``--svr-hp-fold`` says which fold to read (so a
+    multi-fold JSON works); falls back to the first key.
+    """
+    if not getattr(args, "svr_hp_json", None):
+        return args.svr_C, args.svr_gamma, args.svr_eps
+    import json
+    hp_table = json.loads(open(args.svr_hp_json).read())
+    fold = getattr(args, "svr_hp_fold", None)
+    if fold is None:
+        # If JSON has one fold, use it; otherwise require --svr-hp-fold.
+        if len(hp_table) == 1:
+            (_, hp), = hp_table.items()
+        else:
+            raise ValueError(
+                f"--svr-hp-json {args.svr_hp_json} has folds {list(hp_table.keys())}; "
+                f"pass --svr-hp-fold to disambiguate.")
+    else:
+        key = str(fold)
+        if key not in hp_table:
+            raise ValueError(
+                f"fold {key!r} not in {args.svr_hp_json} (have {list(hp_table.keys())}).")
+        hp = hp_table[key]
+    return float(hp["C"]), float(hp["gamma"]), float(hp["epsilon"])
+
+
 def _screen_cm_arg(s):
     """argparse type for --screen-cm: 'WxH' (e.g. '54.4x30.4') or 'none' to disable."""
     if s is None or s.lower() in ("none", "off", "false", ""):
@@ -268,7 +307,21 @@ def add_visualize_args(p):
     )
     p.add_argument("--inner-steps", type=int, default=20)
     p.add_argument("--inner-lr", type=float, default=1.0)
-    p.add_argument("--svr-C", type=float, default=1.0)
+    p.add_argument(
+        "--svr-hp-json", default=None,
+        help="JSON written by `svrsearch --json-out` (per-fold tuned "
+             "(C, gamma, epsilon) for the prediction-space SVR). Overrides "
+             "--svr-C / --svr-gamma / --svr-eps when given. STRONGLY recommended "
+             "-- the sklearn defaults (C=1) produce an under-regularised SVR "
+             "whose predictions cluster near the training-target mean.",
+    )
+    p.add_argument("--svr-hp-fold", type=int, default=None,
+                   help="Fold key to read from --svr-hp-json. Optional if the "
+                        "JSON contains only one fold.")
+    p.add_argument("--svr-C", type=float, default=1.0,
+                   help="Manual SVR C (used only if --svr-hp-json not set). "
+                        "sklearn default 1.0 is usually too small for gaze cm "
+                        "scales; use the value from `svrsearch` (often 100-300).")
     p.add_argument("--svr-eps", type=float, default=0.1)
     p.add_argument("--svr-gamma", default="scale")
     p.add_argument("--batch-size", type=int, default=64)
@@ -283,6 +336,20 @@ def visualize(args):
         args.svr_gamma = float(args.svr_gamma)
     except (TypeError, ValueError):
         pass  # 'scale' / 'auto'
+
+    # Loud warning when SVR is requested with sklearn defaults: at gaze cm
+    # scales this gives a near-constant SVR output near the target mean
+    # ("scale of svr is much smaller than base/meta").
+    if "svr" in [m.strip() for m in args.methods.split(",")] \
+            and not getattr(args, "svr_hp_json", None) \
+            and float(args.svr_C) <= 1.0:
+        import sys
+        print(
+            "WARNING: --svr-C=1.0 (sklearn default). RBF-SVR on gaze cm-scale "
+            "targets with C=1 is heavily under-regularised; predictions will "
+            "cluster near the training-target mean and look 'small-scale'. "
+            "Pass --svr-hp-json runs/.../svr_hp_seedX_foldY.json for the "
+            "PSO-tuned hyperparameters.", file=sys.stderr)
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     dataset = _build_dataset(args)
