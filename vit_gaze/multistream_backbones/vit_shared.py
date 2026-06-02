@@ -58,6 +58,16 @@ class MultiStreamViTGaze(MultistreamBackboneBase):
                 nn.GELU(),
             )
             grid_feat_dim = 128
+            # Zero-init LayerScale gate on the grid branch (CaiT, Touvron et al.
+            # 2021), same fix as the vivit temporal_gate. At init the grid
+            # contributes nothing, so the fused read-out is the clean face+eye
+            # feature and the head starts from the strong per-stream solution.
+            # Without it the randomly-initialised grid_mlp injects noise into
+            # the read-out, the head collapses to predicting the dataset-mean
+            # gaze point, and training never escapes that floor (observed with
+            # vivit + --use-grid: train loss flat ~0.40, vs ~0.04 grid-off). The
+            # gate learns to open as the grid earns its keep.
+            self.grid_gate = nn.Parameter(torch.zeros(grid_feat_dim))
 
         fused_dim = hidden_dim * 3 + grid_feat_dim
         self.head = nn.Sequential(
@@ -85,7 +95,7 @@ class MultiStreamViTGaze(MultistreamBackboneBase):
         if self.use_grid:
             if grid is None:
                 raise ValueError("Grid input expected but not provided.")
-            feats.append(self.grid_mlp(grid))
+            feats.append(self.grid_gate * self.grid_mlp(grid))
         return torch.cat(feats, dim=1)
 
     def forward(self, face, eye_left, eye_right, grid=None):
