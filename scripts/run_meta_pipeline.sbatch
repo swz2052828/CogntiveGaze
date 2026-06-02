@@ -17,7 +17,7 @@
 #SBATCH --array=0-4
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=48G
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --output=logs/meta_%A_fold%a.out
 #SBATCH --error=logs/meta_%A_fold%a.err
 
@@ -30,10 +30,16 @@
 : "${EYE_PATH:=../datasets/ProcessedData}"
 : "${MEAN_PATH:=meanno7}"
 : "${OUT_ROOT:=../runs/meta_pipeline}"
-: "${BACKBONE:=mobilenet_v3}"
+: "${BACKBONE:=vivit}"
 : "${SEEDS:=42 123 7}"
 : "${EPOCHS:=20}"
-: "${BATCH_SIZE:=256}"
+# vivit T=number of frames per window. batch*T frames hit the GPU per step.
+# batch 32 x T4 = 128 frame-units peaked at 90% of the 5090's 32GB with grid
+# OFF and OOM'd on the backward pass with --use-grid ON (job 1236). Halved to
+# 64 frame-units for headroom for the grid stream + the metatrain/metacompare
+# stages. Keep BATCH_SIZE*TEMPORAL_WINDOW <= ~64.
+: "${TEMPORAL_WINDOW:=4}"
+: "${BATCH_SIZE:=16}"
 : "${NUM_WORKERS:=8}"
 : "${LR:=1e-4}"
 : "${LR_SCHEDULER:=cosine}"
@@ -73,6 +79,10 @@ nvidia-smi -L
 ml load conda/miniforge3 cuda/13.0
 eval "$(conda shell.bash hook)"
 conda activate gaze || { echo "[ERR] failed to activate gaze"; exit 1; }
+
+# Reduce CUDA allocator fragmentation (job 1236 OOM'd with 1.39 GiB reserved
+# but unallocated). Recommended by the OOM error itself.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 mkdir -p logs
 
@@ -152,7 +162,7 @@ for SEED in $SEEDS; do
 
   COMMON_TRAIN="$COMMON_DATA --weights imagenet --epochs $EPOCHS --batch-size $BATCH_SIZE \
     --num-workers $NUM_WORKERS --lr $LR --lr-scheduler $LR_SCHEDULER --augment $AUGMENT \
-    --patience $PATIENCE --min-delta $MIN_DELTA --amp --compile \
+    --patience $PATIENCE --min-delta $MIN_DELTA --amp --temporal-window $TEMPORAL_WINDOW \
     --fold-index $FOLD --seed $SEED"
 
   echo "===================================================="
@@ -187,7 +197,7 @@ for SEED in $SEEDS; do
   if [[ -f "$META_CKPT" ]]; then
     echo "[fold $FOLD seed $SEED] stage 3 meta(base): skip"
   else
-    $CLI metatrain $COMMON_DATA --weights imagenet \
+    $CLI metatrain $COMMON_DATA --weights imagenet --temporal-window $TEMPORAL_WINDOW \
       --init-checkpoint "$BASE_CKPT" --adapter $ADAPTER \
       --meta-support $META_SUPPORT --meta-query $META_QUERY \
       --inner-steps $INNER_STEPS --inner-lr $INNER_LR --meta-iters $META_ITERS \
@@ -202,7 +212,7 @@ for SEED in $SEEDS; do
   if [[ -f "$META_ADV_CKPT" ]]; then
     echo "[fold $FOLD seed $SEED] stage 4 meta(adv): skip"
   else
-    $CLI metatrain $COMMON_DATA --weights imagenet \
+    $CLI metatrain $COMMON_DATA --weights imagenet --temporal-window $TEMPORAL_WINDOW \
       --init-checkpoint "$ADV_CKPT" --adapter $ADAPTER \
       --meta-support $META_SUPPORT --meta-query $META_QUERY \
       --inner-steps $INNER_STEPS --inner-lr $INNER_LR --meta-iters $META_ITERS \
