@@ -81,6 +81,18 @@ class ViViTMultistream(MultistreamBackboneBase):
         self.temporal_encoder = nn.TransformerEncoder(layer, num_temporal_layers)
         self.temporal_ln = nn.LayerNorm(feature_dim)
 
+        # LayerScale-style residual gate (CaiT, Touvron et al. 2021), init 0.
+        # At init the temporal branch contributes nothing and the read-out is the
+        # *clean* last-frame spatial feature -- i.e. the model starts exactly at
+        # the (strong, pretrained) per-frame solution instead of feeding the head
+        # the output of a randomly-initialised transformer. Without this, the
+        # random temporal block scrambles the read-out token on step 0, the head
+        # collapses to predicting the dataset-mean gaze point, and training never
+        # escapes that floor (observed: train loss flat ~0.405, val error flat
+        # ~9.4 cm, best epoch = 1). The gate learns to open as temporal context
+        # earns its keep; if it never does, we recover the per-frame model.
+        self.temporal_gate = nn.Parameter(torch.zeros(feature_dim))
+
         # Standard regression head over the last-frame temporal-fused token.
         self.head = nn.Sequential(
             nn.LayerNorm(feature_dim),
@@ -119,13 +131,16 @@ class ViViTMultistream(MultistreamBackboneBase):
         feats_flat = self.spatial.forward_features(face_f, eye_l_f, eye_r_f, grid_f)  # (B*T, D)
         feats = feats_flat.reshape(B, T, self.feature_dim)
 
-        # 2) Temporal encoding.
-        feats = feats + self.temporal_pos_embed
-        feats = self.temporal_encoder(feats)
-        feats = self.temporal_ln(feats)
+        # 2) Temporal encoding, added back to the clean spatial read-out through
+        # a zero-initialised LayerScale gate (see __init__). The identity path is
+        # the last frame's raw spatial feature; the temporal branch only
+        # perturbs it once the gate has learned to open.
+        spatial_readout = feats[:, -1, :]                                        # (B, D)
+        temporal = self.temporal_encoder(feats + self.temporal_pos_embed)
+        temporal = self.temporal_ln(temporal)[:, -1, :]                          # (B, D)
 
-        # 3) Read out the last frame's temporal-fused token.
-        return feats[:, -1, :]                                                   # (B, D)
+        # 3) Gated residual read-out.
+        return spatial_readout + self.temporal_gate * temporal                   # (B, D)
 
     def forward(self, face, eye_left, eye_right, grid=None):
         return self.head(self.forward_features(face, eye_left, eye_right, grid))
