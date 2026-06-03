@@ -32,7 +32,10 @@ import torch
 import torch.utils.data as data
 
 from . import accel
-from .dataset import build_multistream_dataset_maybe_video
+from .dataset import (
+    build_multistream_dataset_maybe_video,
+    sync_vivit_temporal_window_from_checkpoint,
+)
 from .models import vivit_kwargs_from_args, batch_multistream_for_mode, create_model
 from .splits import recording_kfolds, select_splits
 from .training import denormalize_gaze, log
@@ -298,6 +301,8 @@ def _run_svrsearch(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
 
+    # vivit: dataset window must match the model's (rebuilt from base_checkpoint).
+    sync_vivit_temporal_window_from_checkpoint(args, args.base_checkpoint)
     dataset = build_multistream_dataset_maybe_video(args)
     splits_all = recording_kfolds(dataset.unique_recordings(), folds=args.folds, seed=args.seed)
     splits = select_splits(splits_all, args.fold_index)
