@@ -107,6 +107,7 @@ def vivit_kwargs_from_args(args):
         vivit_temporal_window=int(get("temporal_window", 8)),
         vivit_temporal_layers=int(get("vivit_temporal_layers", 4)),
         vivit_temporal_heads=int(get("vivit_temporal_heads", 8)),
+        vivit_temporal_dim=int(get("vivit_temporal_dim", 512)),
     )
 
 
@@ -122,6 +123,7 @@ def create_model(
     vivit_temporal_window=8,
     vivit_temporal_layers=4,
     vivit_temporal_heads=8,
+    vivit_temporal_dim=512,
 ):
     if input_mode == "paired":
         return PairedFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
@@ -136,6 +138,7 @@ def create_model(
             vivit_temporal_window=vivit_temporal_window,
             vivit_temporal_layers=vivit_temporal_layers,
             vivit_temporal_heads=vivit_temporal_heads,
+            vivit_temporal_dim=vivit_temporal_dim,
         )
     return SingleFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
 

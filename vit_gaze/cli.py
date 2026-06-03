@@ -119,6 +119,15 @@ def _add_vivit_args(parser):
         "--vivit-temporal-heads", type=int, default=8,
         help="ViViT only. Number of attention heads in the temporal transformer.",
     )
+    parser.add_argument(
+        "--vivit-temporal-dim", type=int, default=512,
+        help="ViViT only. Width (d_model) of the temporal transformer. Each "
+             "per-frame feature is projected to this dim before temporal "
+             "attention and back up afterwards. Much smaller than the fused "
+             "per-frame feature (768*3+grid), so the temporal block stays cheap "
+             "(transformer params scale as d_model**2). Default 512; set equal "
+             "to the fused dim to disable the projection.",
+    )
 
 
 def build_parser():

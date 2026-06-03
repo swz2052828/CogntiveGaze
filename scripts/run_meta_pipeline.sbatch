@@ -147,7 +147,7 @@ CSV_OUT="$OUT_ROOT/metacompare.csv"
 
 CLI="srun python vit_gaze_segmenter.py"
 COMMON_DATA="--data-path $DATA_PATH --eye-path $EYE_PATH --mean-path $MEAN_PATH \
-  --input-mode multistream --backbone $BACKBONE --use-grid"
+  --input-mode multistream --backbone $BACKBONE"
 
 for SEED in $SEEDS; do
   SBD="$BASE_DIR/seed${SEED}";       mkdir -p "$SBD"

@@ -75,6 +75,7 @@ def build_multistream_backbone(
     vivit_temporal_window: int = 8,
     vivit_temporal_layers: int = 4,
     vivit_temporal_heads: int = 8,
+    vivit_temporal_dim: int = 512,
 ) -> MultistreamBackboneBase:
     """Factory. Validates the grid requirement before instantiating."""
 
@@ -135,6 +136,7 @@ def build_multistream_backbone(
             temporal_window=vivit_temporal_window,
             num_temporal_layers=vivit_temporal_layers,
             num_temporal_heads=vivit_temporal_heads,
+            temporal_dim=vivit_temporal_dim,
         )
     if backbone == "eyes_only_vit":
         from .eyes_only import EyesOnlyViTGaze
