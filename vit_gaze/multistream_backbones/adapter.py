@@ -59,6 +59,29 @@ class MultistreamBackboneBase(nn.Module, ABC):
         raise AttributeError(
             f"{type(self).__name__} has neither a .head nor a .fc readout module.")
 
+    def calibration_feature(self, fused: torch.Tensor) -> torch.Tensor:
+        """Penultimate readout activation -- the compact pre-output embedding.
+
+        This is the faithful analogue of Zhu et al.'s ``gaze_feature`` bottleneck
+        (SwarmIntelligentCalibration): the activation that *feeds* the final
+        ``Linear(.,2)``, NOT the wide ``forward_features`` vector. For the ViT
+        head (LayerNorm -> Linear -> GELU -> Dropout -> Linear(512,128) -> GELU
+        -> Linear(128,2)) this is 128-d, vs 2432-d for ``forward_features``.
+        Used as the per-subject SVR calibration feature so the SVR replaces only
+        the final linear readout, matching their recipe (they fit SVR on a 256-d
+        ``gaze_feature``, not the raw backbone output).
+
+        ``fused`` is the ``forward_features`` output, so callers that already
+        have it avoid a second encoder pass.
+        """
+        readout = self.readout
+        if not isinstance(readout, nn.Sequential) or len(readout) < 2:
+            raise NotImplementedError(
+                f"{type(self).__name__}.readout is not a trimmable Sequential "
+                f"head; embedding-space SVR calibration needs a head ending in "
+                f"a final Linear(.,2).")
+        return readout[:-1](fused)
+
 
 REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
 SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit")

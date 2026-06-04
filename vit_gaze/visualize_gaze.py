@@ -59,7 +59,7 @@ def _predict_methods(args, dataset, indices, device):
 
     # Base model: predictions + (reused) features for SVR fitting.
     base_model, base_mean, base_std, _, _ = load_checkpoint(args.base_checkpoint, device)
-    _, gts_t, base_preds_t = _features_and_preds(
+    _, gts_t, base_preds_t, _ = _features_and_preds(
         base_model, dataset, indices, base_mean, base_std, device,
         args.batch_size, args.num_workers)
     gts = gts_t.numpy()
@@ -95,7 +95,7 @@ def _predict_methods(args, dataset, indices, device):
             raise ValueError("--methods includes meta but --meta-checkpoint not given.")
         meta_model, adapter, meta_mean, meta_std = _load_meta_checkpoint(
             args.meta_checkpoint, device)
-        feats_t, gts_m, _ = _features_and_preds(
+        feats_t, gts_m, _, _ = _features_and_preds(
             meta_model, dataset, indices, meta_mean, meta_std, device,
             args.batch_size, args.num_workers)
         feats = feats_t.to(device)
