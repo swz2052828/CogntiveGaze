@@ -1,8 +1,10 @@
 """MobileViT multistream backbone for gaze estimation.
 
 Lightweight transformer-based architecture optimized for mobile/edge devices.
-Uses MobileViT-S from torchvision (if available) or falls back to a lightweight
-ViT variant with reduced hidden dimension and fewer attention heads.
+Uses the real MobileViT-S from ``timm`` (torchvision does not ship MobileViT),
+which combines MobileNetV2-style conv blocks with local-windowed transformer
+blocks. The encoder is built with ``num_classes=0`` so it returns a 640-d
+globally-pooled feature vector per stream.
 """
 
 import torch
@@ -10,16 +12,31 @@ import torch.nn as nn
 
 from .adapter import MultistreamBackboneBase
 
+_MOBILEVIT_FEAT_DIM = 640  # timm mobilevit_s num_features
+
+
+def _build_mobilevit_encoder(weights: str) -> nn.Module:
+    """Build a timm MobileViT-S feature extractor (num_classes=0 -> pooled vec)."""
+    import timm
+
+    if weights == "imagenet":
+        pretrained = True
+    elif weights == "none":
+        pretrained = False
+    else:
+        raise ValueError("--weights must be 'none' or 'imagenet'")
+    return timm.create_model("mobilevit_s", pretrained=pretrained, num_classes=0)
+
 
 class MobileViTMultistream(MultistreamBackboneBase):
-    """Shared MobileViT-Small backbone over face + left eye + right eye + optional grid.
+    """Shared MobileViT-S backbone over face + left eye + right eye + optional grid.
 
     Same multistream architecture as MultiStreamViTGaze but with MobileViT-S
-    (19.3M params, 321 MACs) instead of ViT-B/16 (86M params). Attention layers
-    use conv-local windowing and separable convolutions for efficiency.
-    Eye crops are 224x224 (same as face crop), so the same encoder applies to
-    all three streams without resizing. Weight sharing reduces overfitting at
-    small subject counts.
+    (~5M params) instead of ViT-B/16 (86M params). Attention layers use
+    conv-local windowing and separable convolutions for efficiency. Eye crops
+    are 224x224 (same as face crop), so the same encoder applies to all three
+    streams without resizing. Weight sharing reduces overfitting at small
+    subject counts.
     """
 
     requires_grid = False
@@ -33,38 +50,8 @@ class MobileViTMultistream(MultistreamBackboneBase):
     ):
         super().__init__()
 
-        # Try to use torchvision MobileViT, fall back to lightweight ViT
-        try:
-            from torchvision.models import MobileViT_S_Weights, mobilevit_s
-            if weights == "imagenet":
-                mobilevit_weights = MobileViT_S_Weights.IMAGENET1K_V1
-            elif weights == "none":
-                mobilevit_weights = None
-            else:
-                raise ValueError("--weights must be 'none' or 'imagenet'")
-
-            self.encoder = mobilevit_s(weights=mobilevit_weights)
-            # MobileViT returns features from different stages; get the output dimension
-            hidden_dim = 320  # MobileViT-S final feature dimension
-        except (ImportError, AttributeError):
-            # Fallback: lightweight ViT with reduced dims
-            from torchvision.models import ViT_B_16_Weights, vit_b_16
-            # Use standard ViT but with reduced hidden_dim for "mobile" feel
-            if weights == "imagenet":
-                vit_weights = ViT_B_16_Weights.IMAGENET1K_V1
-            elif weights == "none":
-                vit_weights = None
-            else:
-                raise ValueError("--weights must be 'none' or 'imagenet'")
-
-            self.encoder = vit_b_16(weights=vit_weights)
-            hidden_dim = self.encoder.heads.head.in_features
-
-        # Remove the original classification head
-        if hasattr(self.encoder, 'heads'):
-            self.encoder.heads = nn.Identity()
-        elif hasattr(self.encoder, 'classifier'):
-            self.encoder.classifier = nn.Identity()
+        self.encoder = _build_mobilevit_encoder(weights)
+        hidden_dim = _MOBILEVIT_FEAT_DIM
 
         if freeze_encoder:
             for param in self.encoder.parameters():

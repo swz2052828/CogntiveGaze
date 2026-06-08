@@ -93,6 +93,12 @@ conda activate /springbrook/share/eng/esrpxk/envs/gaze || { echo "[ERR] failed t
 # but unallocated). Recommended by the OOM error itself.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+# timm MobileViT pretrained weights are pre-cached under ~/.cache/huggingface
+# (on shared /springbrook). Force offline so compute nodes use the cache and
+# never block on a network call to the HF Hub.
+export HF_HUB_OFFLINE=1
+export HF_HOME=/springbrook/home/e/esrpxk/.cache/huggingface
+
 mkdir -p /springbrook/share/eng/esrpxk/logs
 
 # ==============================================================================

@@ -5,13 +5,12 @@ features concatenated and fed to the regression head. The face crop and the
 face grid arguments to forward / forward_features are accepted (for interface
 compatibility with the rest of the multistream pipeline) but ignored.
 
-Same ablation as EyesOnlyViTGaze but with lightweight MobileViT-S instead of
-ViT-B/16: does per-subject calibration absorb the head-pose / distance
-information when using a lighter model that might be less redundant?
+Same ablation as EyesOnlyViTGaze but with the real timm MobileViT-S (~5M
+params) instead of ViT-B/16: does per-subject calibration absorb the head-pose
+/ distance information when using a lighter model that might be less redundant?
 
-forward_features returns a 2*320 = 640-d vector (vs 1536-d for eyes_only_vit
-and 2304-d for the three-stream vit), which makes FiLM/LoRA meta adapters
-much smaller and faster to train.
+forward_features returns a 2*640 = 1280-d vector (vs 1536-d for eyes_only_vit
+and 2304-d for the three-stream vit), from the real timm MobileViT-S encoder.
 
 The dataloader contract is unchanged -- the multistream dataset still
 produces (face, eye_left, eye_right, grid); this backbone just doesn't
@@ -22,6 +21,7 @@ import torch
 import torch.nn as nn
 
 from .adapter import MultistreamBackboneBase
+from .mobile_vit import _MOBILEVIT_FEAT_DIM, _build_mobilevit_encoder
 
 
 class EyesOnlyMobileViTGaze(MultistreamBackboneBase):
@@ -38,36 +38,8 @@ class EyesOnlyMobileViTGaze(MultistreamBackboneBase):
     ):
         super().__init__()
 
-        # Try to use torchvision MobileViT, fall back to ViT if unavailable
-        try:
-            from torchvision.models import MobileViT_S_Weights, mobilevit_s
-            if weights == "imagenet":
-                mobilevit_weights = MobileViT_S_Weights.IMAGENET1K_V1
-            elif weights == "none":
-                mobilevit_weights = None
-            else:
-                raise ValueError("--weights must be 'none' or 'imagenet'")
-
-            self.encoder = mobilevit_s(weights=mobilevit_weights)
-            hidden_dim = 320  # MobileViT-S final feature dimension
-        except (ImportError, AttributeError):
-            # Fallback: use ViT-B/16 if MobileViT is unavailable
-            from torchvision.models import ViT_B_16_Weights, vit_b_16
-            if weights == "imagenet":
-                vit_weights = ViT_B_16_Weights.IMAGENET1K_V1
-            elif weights == "none":
-                vit_weights = None
-            else:
-                raise ValueError("--weights must be 'none' or 'imagenet'")
-
-            self.encoder = vit_b_16(weights=vit_weights)
-            hidden_dim = 768
-
-        # Remove the original classification head
-        if hasattr(self.encoder, 'heads'):
-            self.encoder.heads = nn.Identity()
-        elif hasattr(self.encoder, 'classifier'):
-            self.encoder.classifier = nn.Identity()
+        self.encoder = _build_mobilevit_encoder(weights)
+        hidden_dim = _MOBILEVIT_FEAT_DIM
 
         if freeze_encoder:
             for param in self.encoder.parameters():
