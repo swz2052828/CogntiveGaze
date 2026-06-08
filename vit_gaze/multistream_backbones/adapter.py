@@ -84,7 +84,7 @@ class MultistreamBackboneBase(nn.Module, ABC):
 
 
 REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
-SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit")
+SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "mobile_vit")
 
 
 def build_multistream_backbone(
@@ -168,7 +168,25 @@ def build_multistream_backbone(
             use_grid=use_grid,
             grid_size=grid_size,
         )
+    if backbone == "eyes_only_mobile_vit":
+        from .eyes_only_mobile_vit import EyesOnlyMobileViTGaze
+
+        return EyesOnlyMobileViTGaze(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
+    if backbone == "mobile_vit":
+        from .mobile_vit import MobileViTMultistream
+
+        return MobileViTMultistream(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
     raise ValueError(
         f"Unknown backbone '{backbone}'. Choices: vit, foveal_vit, vivit, "
-        f"eyes_only_vit, itracker, mobilenet_v3, affnet, mgazenet."
+        f"eyes_only_vit, eyes_only_mobile_vit, mobile_vit, itracker, mobilenet_v3, affnet, mgazenet."
     )

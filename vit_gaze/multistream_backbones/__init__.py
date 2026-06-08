@@ -34,9 +34,11 @@ from .adapter import (
 )
 from .affnet import AFFNetMultistream
 from .eyes_only import EyesOnlyViTGaze
+from .eyes_only_mobile_vit import EyesOnlyMobileViTGaze
 from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
 from .mgazenet import MGazeNetMultistream
+from .mobile_vit import MobileViTMultistream
 from .mobilenet_v3 import MobileNetV3Multistream
 from .vit_shared import MultiStreamViTGaze
 
@@ -44,8 +46,10 @@ __all__ = [
     "MultistreamBackboneBase",
     "MultiStreamViTGaze",
     "EyesOnlyViTGaze",
+    "EyesOnlyMobileViTGaze",
     "FovealViTMultistream",
     "ITrackerMultistream",
+    "MobileViTMultistream",
     "MobileNetV3Multistream",
     "AFFNetMultistream",
     "MGazeNetMultistream",

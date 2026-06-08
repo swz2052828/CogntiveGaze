@@ -1,47 +1,56 @@
 #!/bin/bash
-# scripts/run_meta_pipeline.sbatch
+# scripts/run_meta_pipeline_springbrook.sbatch
 #
-# Site-adapted version of scripts/meta_pipeline.sbatch (Bletchley HPC). Adds
-# the cluster's module loading + conda activation, system-monitor CSV, and a
-# fresh-clone-or-pull gate so repeat runs don't re-download the repo. All
-# pipeline knobs are overridable via --export=ALL,VAR=val,...
+# Springbrook HPC adaptation of scripts/run_meta_pipeline.sbatch (Bletchley).
+# Changes from Bletchley version:
+#   - Modules: Miniconda3/24.7.1-0 + CUDA/12.8.0  (Bletchley: conda/miniforge3 + cuda/13.0)
+#   - DATA_PATH / EYE_PATH / OUT_ROOT default to /springbrook/share/esrpxk/...
+#   - BACKBONE default: vit  (Bletchley: vivit)
 #
 # Submit:
-#   sbatch scripts/run_meta_pipeline.sbatch                              # full sweep, defaults
-#   sbatch --array=2 --export=ALL,SEEDS=42 scripts/run_meta_pipeline.sbatch  # smoke test (fold 2)
+#   sbatch scripts/run_meta_pipeline_springbrook.sbatch                              # full sweep, defaults
+#   sbatch --array=2 --export=ALL,SEEDS=42 scripts/run_meta_pipeline_springbrook.sbatch  # smoke test (fold 2)
 
 #SBATCH --job-name=vit_gaze_meta
-#SBATCH --partition=gpu
+# QOS per-user caps: gpu = cpu160/gpu15/48h, vis = cpu16/gpu1/16h. Using both
+# partitions: cpu<=16 (vis cap) and time<=16h (vis wall) are required for vis
+# eligibility. At most 1 fold lands on vis (1 gpu/user), the other 4 on gpu.
+# NOTE: the 16h cap applies to ALL folds (incl. gpu ones). A timeout is
+# recoverable -- the per-stage "if ckpt exists: skip" logic resumes on resubmit.
+# Training is GPU-bound, ~2.5 GB RAM (job 1157848), so cpu/mem are right-sized.
+#SBATCH --partition=gpu,vis
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --array=0-4
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=48G
-#SBATCH --time=48:00:00
-#SBATCH --output=logs/meta_%A_fold%a.out
-#SBATCH --error=logs/meta_%A_fold%a.err
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=24G
+#SBATCH --time=16:00:00
+#SBATCH --output=/springbrook/share/eng/esrpxk/logs/meta_%A_fold%a.out
+#SBATCH --error=/springbrook/share/eng/esrpxk/logs/meta_%A_fold%a.err
 
 # ==============================================================================
 # Pipeline config -- override via --export=ALL,VAR=val,...
 # ==============================================================================
 : "${BRANCH:=claude/serene-goodall-ld3iR}"
 : "${REPO_URL:=https://github.com/swz2052828/CogntiveGaze.git}"
-: "${DATA_PATH:=/springbrook/share/esrpxk/datasets/ProcessedData}"
-: "${EYE_PATH:=/springbrook/share/esrpxk/datasets/ProcessedData}"
+: "${DATA_PATH:=/springbrook/share/eng/esrpxk/datasets/ProcessedData}"
+: "${EYE_PATH:=/springbrook/share/eng/esrpxk/datasets/ProcessedData}"
 : "${MEAN_PATH:=meanno7}"
-: "${OUT_ROOT:=/springbrook/share/esrpxk/runs/meta_pipeline}"
+: "${OUT_ROOT:=/springbrook/share/eng/esrpxk/runs/meta_pipeline}"
 : "${BACKBONE:=vit}"
-: "${SEEDS:=42 123 7}"
+: "${SEEDS:=42}"   # single seed: 5-fold CV is the experimental design (no seed sweep)
 : "${EPOCHS:=20}"
-# vivit T=number of frames per window. batch*T frames hit the GPU per step.
-# batch 32 x T4 = 128 frame-units peaked at 90% of the 5090's 32GB with grid
-# OFF and OOM'd on the backward pass with --use-grid ON (job 1236). Halved to
-# 64 frame-units for headroom for the grid stream + the metatrain/metacompare
-# stages. Keep BATCH_SIZE*TEMPORAL_WINDOW <= ~64.
+# Springbrook: L40 (46 GB usable) with vit backbone. Measured on job 1157848:
+# BATCH_SIZE=16 x T4 used only ~5 GB VRAM (11%) at 33-59% GPU util -> lots of
+# headroom. Raised to 128 (8x; ~22-40 GB est.) to saturate the L40 / cut epoch
+# time. The old "BATCH_SIZE*TEMPORAL_WINDOW <= ~64" cap was for a 5090 (32 GB,
+# vivit+grid) and does not apply here. expandable_segments is on (see below).
+# NOTE: 128 is near the VRAM ceiling estimate -- confirm with a 1-epoch smoke
+# test before the full sweep; drop to 96 if it OOMs on the metatrain stage.
 : "${TEMPORAL_WINDOW:=4}"
-: "${BATCH_SIZE:=16}"
-: "${NUM_WORKERS:=8}"
-: "${LR:=1e-4}"
+: "${BATCH_SIZE:=128}"
+: "${NUM_WORKERS:=16}"
+: "${LR:=8e-4}"   # linear scaling: 8x batch (16->128) -> 8x LR (1e-4->8e-4)
 : "${LR_SCHEDULER:=cosine}"
 : "${AUGMENT:=light}"
 : "${PATIENCE:=5}"
@@ -74,22 +83,26 @@ echo "GPU info:"
 nvidia-smi -L
 
 # ==============================================================================
-# Modules + conda env (Bletchley-specific)
+# Modules + conda env (Springbrook-specific)
 # ==============================================================================
-ml load conda/miniforge3 cuda/13.0
+module load Miniconda3/24.7.1-0 CUDA/12.8.0
 eval "$(conda shell.bash hook)"
-conda activate gaze || { echo "[ERR] failed to activate gaze"; exit 1; }
+conda activate /springbrook/share/eng/esrpxk/envs/gaze || { echo "[ERR] failed to activate gaze env"; exit 1; }
 
 # Reduce CUDA allocator fragmentation (job 1236 OOM'd with 1.39 GiB reserved
 # but unallocated). Recommended by the OOM error itself.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-mkdir -p logs
+mkdir -p /springbrook/share/eng/esrpxk/logs
 
 # ==============================================================================
 # System monitor (background; CSV + summary)
 # ==============================================================================
-LOG_DIR="./system_logs"
+# Absolute path: the pipeline later `cd`s into the cloned repo, so a relative
+# ./system_logs would resolve to the wrong place when the end-of-job summary is
+# written (line ~303), failing under `set -euo pipefail` and marking the whole
+# job FAILED even on a clean run. Anchor to the submit dir, resolved pre-cd.
+LOG_DIR="/springbrook/share/eng/esrpxk/system_logs"
 mkdir -p "$LOG_DIR"
 COMBINED_LOG="${LOG_DIR}/system_monitor_${SLURM_JOB_ID}.csv"
 SUMMARY_FILE="${LOG_DIR}/system_summary_${SLURM_JOB_ID}.txt"
@@ -109,20 +122,9 @@ MONITOR_PID=$!
 trap 'kill -0 $MONITOR_PID 2>/dev/null && kill $MONITOR_PID' EXIT
 
 # ==============================================================================
-# Repo: clone on first run, pull-and-checkout on repeats
+# Run directly from the repo checkout in the submit directory (no nested clone).
 # ==============================================================================
-if [[ -d CogntiveGaze/.git ]]; then
-  echo "[repo] CogntiveGaze/ exists; fetching $BRANCH"
-  cd CogntiveGaze
-  git fetch --quiet origin "$BRANCH"
-  git checkout --quiet "$BRANCH"
-  git pull --quiet --ff-only origin "$BRANCH"
-else
-  echo "[repo] cloning $REPO_URL"
-  git clone --quiet "$REPO_URL"
-  cd CogntiveGaze
-  git checkout --quiet "$BRANCH"
-fi
+echo "[repo] running from $(pwd)"
 echo "[repo] HEAD: $(git rev-parse --short HEAD)  branch: $(git rev-parse --abbrev-ref HEAD)"
 
 set -euo pipefail
@@ -145,7 +147,7 @@ PIPE_LOGS="$OUT_ROOT/logs"
 mkdir -p "$BASE_DIR" "$ADV_DIR" "$META_DIR" "$META_ADV_DIR" "$PIPE_LOGS"
 CSV_OUT="$OUT_ROOT/metacompare.csv"
 
-CLI="srun python vit_gaze_segmenter.py"
+CLI="srun --cpus-per-task=$SLURM_CPUS_PER_TASK python vit_gaze_segmenter.py"
 COMMON_DATA="--data-path $DATA_PATH --eye-path $EYE_PATH --mean-path $MEAN_PATH \
   --input-mode multistream --backbone $BACKBONE --use-grid"
 
