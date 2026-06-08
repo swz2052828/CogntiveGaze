@@ -11,12 +11,23 @@ over support/query draws) with a small dependency-free PSO. The output is one
 triple per fold; paste it into ``metacompare`` as ``--svr-C/--svr-eps/--svr-gamma``
 so the SVR baseline is tuned rather than sklearn-default.
 
-Note: Zhu et al. fit SVR on CNN *embeddings* (so the SVR is the readout). Our
-``SVRCalibrator`` -- and this tuner -- fit SVR on the base model's *predicted
-xy* (so the SVR is a per-subject correction on top of an already-trained
-readout). The hyperparameter scales transfer because both are RBF-SVR with
-the same (C, gamma, epsilon) family, but the tuned values are calibrated to
-the prediction-space mapping our metacompare uses, not theirs.
+Two spaces are supported (``--space``):
+
+* ``prediction`` -- fit SVR on the base model's *predicted xy* (so the SVR is a
+  per-subject correction on top of an already-trained readout). This is what our
+  ``SVRCalibrator`` and metacompare's ``svr`` baseline use.
+* ``embedding`` -- fit SVR on the compact penultimate readout activation (the
+  128-d ``calibration_feature``), so the SVR *replaces* the final linear readout.
+  This is the faithful analogue of Zhu et al.'s recipe: they fit SVR on the
+  256-d ``gaze_feature`` bottleneck that feeds their final Linear(.,2), NOT on
+  the raw backbone output. Earlier revisions mistakenly used the 2432-d
+  ``forward_features`` vector here, which is ~19x wider than their bottleneck and
+  made each RBF fit/predict dominate the whole pipeline; the 128-d activation
+  restores both fidelity and speed.
+
+The tuned (C, gamma, epsilon) are written per fold; ``svrsearch --space embedding``
+output feeds metacompare's ``--svr-embed-*`` (which evaluates on the same 128-d
+feature), and ``--space prediction`` output feeds its ``--svr-*``.
 
 Protocol note: HP search uses the **training** subjects of the current fold so
 the held-out subjects are never seen by the tuner, matching the same CV
@@ -209,8 +220,12 @@ def _cache(model, dataset, indices, gaze_mean, gaze_std, device,
            batch_size, num_workers, want_features):
     """Cache (X, gazes, recs) for ``indices``.
 
-    ``X`` is either the model's predicted xy (prediction space) or the fused
-    feature (embedding space), depending on ``want_features``.
+    ``X`` is either the model's predicted xy (prediction space) or the compact
+    penultimate readout activation (embedding space), depending on
+    ``want_features``. The embedding is the 128-d ``calibration_feature`` -- the
+    analogue of Zhu et al.'s 256-d ``gaze_feature`` bottleneck -- NOT the wide
+    2432-d ``forward_features`` vector, so the SVR replaces only the final linear
+    readout and each RBF fit/predict stays cheap.
     """
     loader = data.DataLoader(
         data.Subset(dataset, list(indices)), batch_size=batch_size, shuffle=False,
@@ -221,7 +236,7 @@ def _cache(model, dataset, indices, gaze_mean, gaze_std, device,
         f = model.forward_features(
             inputs["face"], inputs["eye_left"], inputs["eye_right"], inputs.get("grid"))
         if want_features:
-            xs.append(f.float().cpu())
+            xs.append(model.calibration_feature(f).float().cpu())
         else:
             p = denormalize_gaze(model.readout(f).float(), gaze_mean, gaze_std)
             xs.append(p.cpu())

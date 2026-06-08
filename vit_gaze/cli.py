@@ -49,6 +49,36 @@ def add_common_args(parser):
              "Ampere+/Blackwell, ignored on Turing) with negligible accuracy effect.",
     )
     parser.add_argument(
+        "--mixed-precision",
+        choices=("auto", "no", "fp16", "bf16"),
+        default="auto",
+        help="Accelerate's mixed-precision mode. 'auto' (default) uses bf16 on "
+             "Ampere+ GPUs (e.g. RTX 5090) and fp16 on Turing (e.g. RTX 2070 Super). "
+             "'no' disables mixed precision. Gradients are kept in fp32 for stability.",
+    )
+    parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=1,
+        help="Number of steps to accumulate gradients over before optimizer.step(). "
+             "Useful for simulating larger effective batch sizes on memory-constrained "
+             "hardware. Default 1 (no accumulation).",
+    )
+    parser.add_argument(
+        "--log-backend",
+        choices=("tensorboard", "wandb", "none"),
+        default="tensorboard",
+        help="Logging backend for Accelerate to use during training (optional; "
+             "can be set via environment or Accelerate config file). Default: tensorboard.",
+    )
+    parser.add_argument(
+        "--no-accelerate",
+        action="store_true",
+        help="Disable Accelerate and fall back to the custom AMP/device handling "
+             "from the prior implementation. Only for debugging; Accelerate is "
+             "recommended for distributed training.",
+    )
+    parser.add_argument(
         "--eye-path",
         default=None,
         help="Root for preprocessed eye crops (multistream only). "

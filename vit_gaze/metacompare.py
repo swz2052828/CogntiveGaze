@@ -155,11 +155,19 @@ def _load_base_checkpoint(path, device):
 @torch.no_grad()
 def _features_and_preds(model, dataset, indices, gaze_mean, gaze_std,
                         device, batch_size, num_workers):
-    """Return (feats[N,dim], gazes[N,2], base_pred_xy[N,2]) on CPU as numpy/torch."""
+    """Return (feats[N,dim], gazes[N,2], base_pred_xy[N,2], embed_feats[N,128]).
+
+    ``feats`` is the wide ``forward_features`` vector (head input) used by the
+    fc-only fine-tune and meta paths, which adapt the whole readout. ``embed_feats``
+    is the compact penultimate ``calibration_feature`` (128-d) used only by the
+    embedding-space SVR, which replaces just the final linear readout -- this is
+    the faithful analogue of Zhu et al.'s ``gaze_feature`` bottleneck (not the
+    raw 2432-d backbone output). On CPU as numpy/torch.
+    """
     loader = data.DataLoader(
         data.Subset(dataset, list(indices)), batch_size=batch_size, shuffle=False,
         num_workers=num_workers, pin_memory=torch.cuda.is_available())
-    feats, gazes, preds = [], [], []
+    feats, gazes, preds, embed_feats = [], [], [], []
     for batch in loader:
         inputs = batch_multistream_for_mode(batch, device)
         f = model.forward_features(
@@ -167,9 +175,11 @@ def _features_and_preds(model, dataset, indices, gaze_mean, gaze_std,
         p_norm = model.readout(f).float()
         p = denormalize_gaze(p_norm, gaze_mean, gaze_std)
         feats.append(f.float().cpu())
+        embed_feats.append(model.calibration_feature(f).float().cpu())
         gazes.append(batch["gaze"])
         preds.append(p.cpu())
-    return torch.cat(feats), torch.cat(gazes), torch.cat(preds)
+    return (torch.cat(feats), torch.cat(gazes), torch.cat(preds),
+            torch.cat(embed_feats))
 
 
 def _adapt_meta(model, adapter, init_params, f_sup, y_sup, inner_lr, inner_steps):
@@ -214,16 +224,21 @@ def _fc_ft_predict(base_model, base_mean, base_std, base_feats, gazes,
 def _svr_embed_predict(base_feats, gazes, sup_rows, qry_rows, C, gamma, epsilon):
     """SVR-on-embeddings baseline (Zhu et al., SwarmIntelligentCalibration).
 
-    Fits two RBF-SVRs on K support pairs of (fused feature -> coord), then
+    Fits two RBF-SVRs on K support pairs of (embedding feature -> coord), then
     predicts on the query features. This replaces the readout entirely with a
-    per-subject SVR -- structurally what Zhu et al. do, but applied to OUR
-    cached fused features so the comparison is fair (same encoder, same K).
+    per-subject SVR -- structurally what Zhu et al. do, applied to OUR cached
+    features so the comparison is fair (same encoder, same K).
 
-    Numerics: the feature dim (~2304) > K at small K, so the SVR is in the
+    ``base_feats`` here is the compact penultimate ``calibration_feature``
+    (128-d) -- the analogue of their 256-d ``gaze_feature`` bottleneck -- NOT the
+    wide 2432-d ``forward_features`` vector. Matching the feature space keeps the
+    SVR replacing only the final linear readout (their actual recipe) and lets
+    the ``svrsearch --space embedding`` tuned (C, gamma, epsilon) transfer here.
+
+    Numerics: the feature dim (128) is still > K at small K, so the SVR is in the
     underdetermined regime. That is part of what the comparison is meant to
-    expose: meta-adapter and prediction-space SVR both anchor on a working
-    base model, whereas this method must learn the full feature -> gaze map
-    from K points.
+    expose: meta-adapter and prediction-space SVR both anchor on a working base
+    model, whereas this method must learn the feature -> gaze map from K points.
     """
     from sklearn.svm import SVR
     f_sup = base_feats[sup_rows].numpy()
@@ -261,10 +276,10 @@ def _compare_one_fold(args, dataset, split, device):
     meta_model, adapter, meta_mean, meta_std = _load_meta_checkpoint(args.meta_checkpoint, device)
 
     log(f"Fold {fold} caching features val_recordings={split['val_recordings']}")
-    base_feats, gazes_b, base_preds = _features_and_preds(
+    base_feats, gazes_b, base_preds, base_embed_feats = _features_and_preds(
         base_model, dataset, val_idx, base_mean, base_std, device,
         args.batch_size, args.num_workers)
-    meta_feats, gazes_m, _ = _features_and_preds(
+    meta_feats, gazes_m, _, _ = _features_and_preds(
         meta_model, dataset, val_idx, meta_mean, meta_std, device,
         args.batch_size, args.num_workers)
     assert torch.allclose(gazes_b, gazes_m), "Datasets returned different ground truth orderings."
@@ -274,7 +289,7 @@ def _compare_one_fold(args, dataset, split, device):
     if "meta_adv" in methods:
         adv_model, adv_adapter, adv_mean, adv_std = _load_meta_checkpoint(
             args.meta_adv_checkpoint, device)
-        adv_feats, gazes_a, _ = _features_and_preds(
+        adv_feats, gazes_a, _, _ = _features_and_preds(
             adv_model, dataset, val_idx, adv_mean, adv_std, device,
             args.batch_size, args.num_workers)
         assert torch.allclose(gazes_b, gazes_a), "meta-adv dataset ordering mismatch."
@@ -313,7 +328,7 @@ def _compare_one_fold(args, dataset, split, device):
             # SVR on embeddings (Zhu et al.'s actual recipe): SVR replaces the readout.
             if "svr_embed" in methods:
                 pred_q_se = _svr_embed_predict(
-                    base_feats, gazes_b, sup_rows, qry_rows,
+                    base_embed_feats, gazes_b, sup_rows, qry_rows,
                     C=args.svr_embed_C, gamma=args.svr_embed_gamma,
                     epsilon=args.svr_embed_eps)
                 errs["svr_embed"].append(float(np.linalg.norm(pred_q_se - gt_q, axis=1).mean()))
