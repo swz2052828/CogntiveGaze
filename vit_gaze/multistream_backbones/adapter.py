@@ -84,7 +84,7 @@ class MultistreamBackboneBase(nn.Module, ABC):
 
 
 REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
-SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "mobile_vit")
+SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw")
 
 
 def build_multistream_backbone(
@@ -186,7 +186,18 @@ def build_multistream_backbone(
             use_grid=use_grid,
             grid_size=grid_size,
         )
+    if backbone in ("cnn_transformer", "cnn_transformer_raw"):
+        from .cnn_transformer import CNNTransformerGaze
+
+        return CNNTransformerGaze(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+            preserve_meta_contract=(backbone == "cnn_transformer"),
+        )
     raise ValueError(
         f"Unknown backbone '{backbone}'. Choices: vit, foveal_vit, vivit, "
-        f"eyes_only_vit, eyes_only_mobile_vit, mobile_vit, itracker, mobilenet_v3, affnet, mgazenet."
+        f"eyes_only_vit, eyes_only_mobile_vit, mobile_vit, cnn_transformer, "
+        f"cnn_transformer_raw, itracker, mobilenet_v3, affnet, mgazenet."
     )

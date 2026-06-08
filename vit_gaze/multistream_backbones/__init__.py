@@ -33,6 +33,7 @@ from .adapter import (
     build_multistream_backbone,
 )
 from .affnet import AFFNetMultistream
+from .cnn_transformer import CNNTransformerGaze
 from .eyes_only import EyesOnlyViTGaze
 from .eyes_only_mobile_vit import EyesOnlyMobileViTGaze
 from .foveal_vit import FovealViTMultistream
@@ -47,6 +48,7 @@ __all__ = [
     "MultiStreamViTGaze",
     "EyesOnlyViTGaze",
     "EyesOnlyMobileViTGaze",
+    "CNNTransformerGaze",
     "FovealViTMultistream",
     "ITrackerMultistream",
     "MobileViTMultistream",
