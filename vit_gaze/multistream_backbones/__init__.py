@@ -27,9 +27,11 @@ grid/--use-grid combination before instantiating.
 """
 
 from .adapter import (
+    OUTPUT_ACTIVATIONS,
     REQUIRES_GRID,
     SUPPORTS_NO_GRID,
     MultistreamBackboneBase,
+    attach_output_activation,
     build_multistream_backbone,
 )
 from .affnet import AFFNetMultistream
@@ -61,5 +63,7 @@ __all__ = [
     "MGazeNetMultistream",
     "REQUIRES_GRID",
     "SUPPORTS_NO_GRID",
+    "OUTPUT_ACTIVATIONS",
+    "attach_output_activation",
     "build_multistream_backbone",
 ]

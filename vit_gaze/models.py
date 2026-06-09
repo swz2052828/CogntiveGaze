@@ -87,6 +87,7 @@ class SingleFaceViTGaze(nn.Module):
 # continue to work.
 from .multistream_backbones import (  # noqa: E402,F401
     MultiStreamViTGaze,
+    attach_output_activation,
     build_multistream_backbone,
 )
 
@@ -117,6 +118,9 @@ def create_model(
     use_grid=False,
     grid_size=25,
     backbone="vit",
+    # optional output activation on the final (B, 2) gaze prediction
+    output_activation="none",
+    gaze_range=4.0,
     # vivit-specific (ignored for other backbones)
     vivit_spatial="vit",
     vivit_temporal_window=8,
@@ -124,9 +128,9 @@ def create_model(
     vivit_temporal_heads=8,
 ):
     if input_mode == "paired":
-        return PairedFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
-    if input_mode == "multistream":
-        return build_multistream_backbone(
+        model = PairedFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
+    elif input_mode == "multistream":
+        model = build_multistream_backbone(
             backbone=backbone,
             weights=weights,
             freeze_encoder=freeze_encoder,
@@ -137,7 +141,9 @@ def create_model(
             vivit_temporal_layers=vivit_temporal_layers,
             vivit_temporal_heads=vivit_temporal_heads,
         )
-    return SingleFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
+    else:
+        model = SingleFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
+    return attach_output_activation(model, output_activation, gaze_range)
 
 
 def batch_images_for_mode(batch, input_mode, device):

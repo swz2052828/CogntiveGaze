@@ -164,6 +164,8 @@ def train_one_fold(args, dataset, split, device):
         use_grid=getattr(args, "use_grid", False),
         grid_size=getattr(args, "grid_size", 25),
         backbone=getattr(args, "backbone", "vit"),
+        output_activation=getattr(args, "output_activation", "none"),
+        gaze_range=getattr(args, "gaze_range", 4.0),
         **vivit_kwargs_from_args(args),
     ).to(device)
     if getattr(args, "compile", False):
@@ -517,6 +519,8 @@ def load_checkpoint(checkpoint_path, device):
         use_grid=bool(saved_args.get("use_grid", False)),
         grid_size=int(saved_args.get("grid_size", 25)),
         backbone=str(saved_args.get("backbone", "vit")),
+        output_activation=str(saved_args.get("output_activation", "none")),
+        gaze_range=float(saved_args.get("gaze_range", 4.0)),
         **vivit_kwargs_from_args(saved_args),
     ).to(device)
     model.load_state_dict(checkpoint["model"])

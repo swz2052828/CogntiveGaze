@@ -29,6 +29,8 @@
 : "${MEAN_PATH:=meanno7}"
 : "${OUT_ROOT:=/springbrook/share/eng/esrpxk/runs/meta_pipeline}"
 : "${BACKBONE:=cnn_transformer_raw}"
+: "${OUTPUT_ACTIVATION:=none}"   # none | scaled_tanh | scaled_sin
+: "${GAZE_RANGE:=4.0}"
 : "${SEEDS:=42}"
 : "${EPOCHS:=20}"
 : "${TEMPORAL_WINDOW:=4}"
@@ -75,6 +77,7 @@ for SEED in $SEEDS; do
   COMMON_TRAIN="$COMMON_DATA --weights imagenet --epochs $EPOCHS --batch-size $BATCH_SIZE \
     --num-workers $NUM_WORKERS --lr $LR --lr-scheduler $LR_SCHEDULER --augment $AUGMENT \
     --patience $PATIENCE --min-delta $MIN_DELTA --amp --temporal-window $TEMPORAL_WINDOW \
+    --output-activation $OUTPUT_ACTIVATION --gaze-range $GAZE_RANGE \
     --fold-index $FOLD --seed $SEED"
 
   echo "===================================================="

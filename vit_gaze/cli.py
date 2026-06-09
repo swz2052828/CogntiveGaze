@@ -160,6 +160,21 @@ def build_parser():
     )
     train_parser.add_argument("--weights", choices=("none", "imagenet"), default="none")
     train_parser.add_argument("--freeze-encoder", action="store_true")
+    train_parser.add_argument(
+        "--output-activation",
+        choices=("none", "scaled_tanh", "scaled_sin"),
+        default="none",
+        help="Activation on the final (x,y) gaze prediction. 'none' (default) "
+             "is a plain linear readout. 'scaled_sin'/'scaled_tanh' map the "
+             "output through gaze_range*sin / gaze_range*tanh -- bounded to "
+             "+/-gaze_range in z-scored target space. NB: a base-model transform "
+             "(applied in forward()); the meta/SVR calibration paths bypass it.",
+    )
+    train_parser.add_argument(
+        "--gaze-range", type=float, default=4.0,
+        help="Scale for --output-activation (in z-scored std units; ~max |z| in "
+             "the data). Ignored when --output-activation none.",
+    )
     train_parser.add_argument("--epochs", type=int, default=10)
     train_parser.add_argument("--batch-size", type=int, default=8)
     train_parser.add_argument("--num-workers", type=int, default=4)

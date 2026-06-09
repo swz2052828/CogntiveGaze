@@ -87,6 +87,51 @@ REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
 SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4")
 
 
+# ---------------------------------------------------------------------------
+# Optional output activation on the final gaze prediction.
+#
+# Gaze targets are z-scored (training.normalize_gaze), so the model predicts in
+# standardized units that span roughly [-4, +4] (screen corners are several std
+# from the per-fold mean). A bounded activation must therefore be *scaled* by a
+# gaze_range that covers that span, or the periphery becomes unreachable.
+#
+# Applied as a forward hook on the backbone so it transforms the final (B, 2)
+# prediction in forward() WITHOUT touching forward_features / readout. NB: the
+# meta-learned and SVR calibration paths bypass forward() (they fit a separate
+# readout on forward_features), so the activation is a base-model transform --
+# evaluate it base-only, not through the meta/SVR pipeline.
+# ---------------------------------------------------------------------------
+OUTPUT_ACTIVATIONS = ("none", "scaled_tanh", "scaled_sin")
+
+
+def _output_activation_fn(kind: str, gaze_range: float):
+    if kind == "scaled_tanh":
+        return lambda out: gaze_range * torch.tanh(out)
+    if kind == "scaled_sin":
+        return lambda out: gaze_range * torch.sin(out)
+    raise ValueError(
+        f"Unknown output_activation '{kind}'. Choices: {OUTPUT_ACTIVATIONS}.")
+
+
+def attach_output_activation(model, kind: str = "none", gaze_range: float = 4.0):
+    """Register a forward hook that maps the (B, 2) gaze output through ``kind``.
+
+    No-op when ``kind == 'none'``. Returns ``model`` for chaining.
+    """
+    if kind == "none":
+        return model
+    fn = _output_activation_fn(kind, float(gaze_range))
+
+    def _hook(_module, _inputs, output):
+        return fn(output)
+
+    model.register_forward_hook(_hook)
+    # Record for introspection / checkpoint round-tripping.
+    model._output_activation = kind
+    model._gaze_range = float(gaze_range)
+    return model
+
+
 def build_multistream_backbone(
     backbone: str,
     weights: str = "none",
