@@ -84,7 +84,7 @@ class MultistreamBackboneBase(nn.Module, ABC):
 
 
 REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
-SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw")
+SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4")
 
 
 def build_multistream_backbone(
@@ -196,8 +196,27 @@ def build_multistream_backbone(
             grid_size=grid_size,
             preserve_meta_contract=(backbone == "cnn_transformer"),
         )
+    if backbone == "convnext":
+        from .convnext import ConvNeXtMultistream
+
+        return ConvNeXtMultistream(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
+    if backbone == "mobilenet_v4":
+        from .mobilenet_v4 import MobileNetV4Multistream
+
+        return MobileNetV4Multistream(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
     raise ValueError(
         f"Unknown backbone '{backbone}'. Choices: vit, foveal_vit, vivit, "
         f"eyes_only_vit, eyes_only_mobile_vit, mobile_vit, cnn_transformer, "
-        f"cnn_transformer_raw, itracker, mobilenet_v3, affnet, mgazenet."
+        f"cnn_transformer_raw, convnext, mobilenet_v4, itracker, mobilenet_v3, "
+        f"affnet, mgazenet."
     )

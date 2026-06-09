@@ -39,8 +39,10 @@ from .eyes_only_mobile_vit import EyesOnlyMobileViTGaze
 from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
 from .mgazenet import MGazeNetMultistream
+from .convnext import ConvNeXtMultistream
 from .mobile_vit import MobileViTMultistream
 from .mobilenet_v3 import MobileNetV3Multistream
+from .mobilenet_v4 import MobileNetV4Multistream
 from .vit_shared import MultiStreamViTGaze
 
 __all__ = [
@@ -53,6 +55,8 @@ __all__ = [
     "ITrackerMultistream",
     "MobileViTMultistream",
     "MobileNetV3Multistream",
+    "ConvNeXtMultistream",
+    "MobileNetV4Multistream",
     "AFFNetMultistream",
     "MGazeNetMultistream",
     "REQUIRES_GRID",
