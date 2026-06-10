@@ -125,13 +125,28 @@ while true; do
 done
 ) &
 MONITOR_PID=$!
-trap 'kill -0 $MONITOR_PID 2>/dev/null && kill $MONITOR_PID' EXIT
 
 # ==============================================================================
-# Run directly from the repo checkout in the submit directory (no nested clone).
+# Per-job code snapshot. The pipeline runs many srun-python stages; if the live
+# working tree is edited mid-run, a later stage would import different code than
+# an earlier one. So pin THIS job to an immutable copy: `git archive` the commit
+# (PIN_COMMIT, default = HEAD at job start) into a per-task dir and run from
+# there. Edits to the live tree afterwards cannot affect a running job.
+# NB: git archive captures COMMITTED code only -- commit before sbatch.
 # ==============================================================================
-echo "[repo] running from $(pwd)"
-echo "[repo] HEAD: $(git rev-parse --short HEAD)  branch: $(git rev-parse --abbrev-ref HEAD)"
+SUBMIT_DIR="$(pwd)"
+PIN_COMMIT="${PIN_COMMIT:-$(git -C "$SUBMIT_DIR" rev-parse HEAD)}"
+CODE_SNAPSHOT="/springbrook/share/eng/esrpxk/runs/_code_snapshots/${SLURM_JOB_ID}"
+mkdir -p "$CODE_SNAPSHOT"
+git -C "$SUBMIT_DIR" archive "$PIN_COMMIT" | tar -x -C "$CODE_SNAPSHOT"
+cd "$CODE_SNAPSHOT"
+echo "[repo] submit dir: $SUBMIT_DIR"
+echo "[repo] pinned commit: $PIN_COMMIT"
+echo "[repo] running from snapshot: $CODE_SNAPSHOT"
+
+# Combined cleanup: stop the monitor and remove this job's code snapshot on exit
+# (logs/results live elsewhere, under absolute paths, and are NOT removed).
+trap 'kill -0 $MONITOR_PID 2>/dev/null && kill $MONITOR_PID; rm -rf "$CODE_SNAPSHOT"' EXIT
 
 set -euo pipefail
 

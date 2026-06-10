@@ -53,10 +53,27 @@ module load Miniconda3/24.7.1-0 CUDA/12.8.0
 eval "$(conda shell.bash hook)"
 conda activate /springbrook/share/eng/esrpxk/envs/gaze || { echo "[ERR] failed to activate gaze env"; exit 1; }
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# timm pretrained weights are pre-cached; force offline so compute nodes use the
+# cache without a network call (base-only can run timm backbones too).
+export HF_HUB_OFFLINE=1
+export HF_HOME=/springbrook/home/e/esrpxk/.cache/huggingface
 mkdir -p /springbrook/share/eng/esrpxk/logs
 
-echo "[repo] running from $(pwd)"
-echo "[repo] HEAD: $(git rev-parse --short HEAD)  branch: $(git rev-parse --abbrev-ref HEAD)"
+# ==============================================================================
+# Per-job code snapshot: pin this job to an immutable copy of the committed repo
+# so later edits to the live working tree can't change code mid-run. (Same
+# mechanism as run_meta_pipeline_springbrook.sbatch.) Commit before sbatch --
+# git archive captures committed code only.
+# ==============================================================================
+SUBMIT_DIR="$(pwd)"
+PIN_COMMIT="${PIN_COMMIT:-$(git -C "$SUBMIT_DIR" rev-parse HEAD)}"
+CODE_SNAPSHOT="/springbrook/share/eng/esrpxk/runs/_code_snapshots/${SLURM_JOB_ID}"
+mkdir -p "$CODE_SNAPSHOT"
+git -C "$SUBMIT_DIR" archive "$PIN_COMMIT" | tar -x -C "$CODE_SNAPSHOT"
+cd "$CODE_SNAPSHOT"
+echo "[repo] pinned commit: $PIN_COMMIT"
+echo "[repo] running from snapshot: $CODE_SNAPSHOT"
+trap 'rm -rf "$CODE_SNAPSHOT"' EXIT
 
 set -euo pipefail
 _fmt() { printf '%dm%02ds' $(( $1 / 60 )) $(( $1 % 60 )); }
