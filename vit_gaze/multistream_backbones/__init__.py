@@ -40,6 +40,7 @@ from .eyes_only import EyesOnlyViTGaze
 from .eyes_only_mgazenet import EyesOnlyMGazeNetGaze
 from .eyes_only_mobile_vit import EyesOnlyMobileViTGaze
 from .eyes_only_mobilenet_v3 import EyesOnlyMobileNetV3Gaze
+from .eyes_only_mobilenet_v4 import EyesOnlyMobileNetV4Gaze
 from .face_only_mobile_vit import FaceOnlyMobileViTGaze
 from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
@@ -57,6 +58,7 @@ __all__ = [
     "EyesOnlyMobileViTGaze",
     "EyesOnlyMGazeNetGaze",
     "EyesOnlyMobileNetV3Gaze",
+    "EyesOnlyMobileNetV4Gaze",
     "FaceOnlyMobileViTGaze",
     "CNNTransformerGaze",
     "FovealViTMultistream",

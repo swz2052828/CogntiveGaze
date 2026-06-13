@@ -146,7 +146,7 @@ def build_parser():
     _add_vivit_args(train_parser)
     train_parser.add_argument(
         "--backbone",
-        choices=("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "face_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "face_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help=(
             "Multistream backbone. vit (default) = shared ViT-B/16 run three "
@@ -309,7 +309,7 @@ def build_parser():
     _add_vivit_args(meta_parser)
     meta_parser.add_argument(
         "--backbone",
-        choices=("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "face_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "face_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help="All multistream backbones expose forward_features and are "
              "supported. The CNN baselines (itracker/mobilenet_v3/affnet/"
