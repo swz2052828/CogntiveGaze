@@ -84,7 +84,7 @@ class MultistreamBackboneBase(nn.Module, ABC):
 
 
 REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
-SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "face_only_mobile_vit", "mobile_vit", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4")
+SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4")
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +240,51 @@ def build_multistream_backbone(
             use_grid=use_grid,
             grid_size=grid_size,
         )
+    if backbone == "eyes_only_fastvit":
+        from .eyes_only_fastvit import EyesOnlyFastViTGaze
+
+        return EyesOnlyFastViTGaze(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
+    if backbone == "mobilevitv2":
+        from .mobilevitv2_multistream import MobileViTv2Multistream
+
+        return MobileViTv2Multistream(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
+    if backbone == "repvit":
+        from .repvit_multistream import RepViTMultistream
+
+        return RepViTMultistream(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
+    if backbone == "convnextv2":
+        from .convnextv2_multistream import ConvNeXtV2Multistream
+
+        return ConvNeXtV2Multistream(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
+    if backbone == "normface_convnext":
+        from .normface_convnext import NormFaceConvNeXtMultistream
+
+        return NormFaceConvNeXtMultistream(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
     if backbone == "eyes_only_mobilenet_v4":
         from .eyes_only_mobilenet_v4 import EyesOnlyMobileNetV4Gaze
 
@@ -298,8 +343,9 @@ def build_multistream_backbone(
     raise ValueError(
         f"Unknown backbone '{backbone}'. Choices: vit, foveal_vit, vivit, "
         f"eyes_only_vit, eyes_only_mobile_vit, eyes_only_mgazenet, "
-        f"eyes_only_mobilenet_v3, eyes_only_mobilenet_v4, face_only_mobile_vit, "
-        f"mobile_vit, cnn_transformer, "
+        f"eyes_only_mobilenet_v3, eyes_only_mobilenet_v4, eyes_only_fastvit, "
+        f"face_only_mobile_vit, mobile_vit, mobilevitv2, repvit, convnextv2, "
+        f"normface_convnext, cnn_transformer, "
         f"cnn_transformer_raw, convnext, mobilenet_v4, itracker, mobilenet_v3, "
         f"affnet, mgazenet."
     )

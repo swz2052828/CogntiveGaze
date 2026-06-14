@@ -41,7 +41,12 @@ from .eyes_only_mgazenet import EyesOnlyMGazeNetGaze
 from .eyes_only_mobile_vit import EyesOnlyMobileViTGaze
 from .eyes_only_mobilenet_v3 import EyesOnlyMobileNetV3Gaze
 from .eyes_only_mobilenet_v4 import EyesOnlyMobileNetV4Gaze
+from .eyes_only_fastvit import EyesOnlyFastViTGaze
 from .face_only_mobile_vit import FaceOnlyMobileViTGaze
+from .mobilevitv2_multistream import MobileViTv2Multistream
+from .repvit_multistream import RepViTMultistream
+from .convnextv2_multistream import ConvNeXtV2Multistream
+from .normface_convnext import NormFaceConvNeXtMultistream
 from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
 from .mgazenet import MGazeNetMultistream
@@ -59,7 +64,12 @@ __all__ = [
     "EyesOnlyMGazeNetGaze",
     "EyesOnlyMobileNetV3Gaze",
     "EyesOnlyMobileNetV4Gaze",
+    "EyesOnlyFastViTGaze",
     "FaceOnlyMobileViTGaze",
+    "MobileViTv2Multistream",
+    "RepViTMultistream",
+    "ConvNeXtV2Multistream",
+    "NormFaceConvNeXtMultistream",
     "CNNTransformerGaze",
     "FovealViTMultistream",
     "ITrackerMultistream",
