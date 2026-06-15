@@ -43,6 +43,7 @@ from .eyes_only_mobilenet_v3 import EyesOnlyMobileNetV3Gaze
 from .eyes_only_mobilenet_v4 import EyesOnlyMobileNetV4Gaze
 from .eyes_only_fastvit import EyesOnlyFastViTGaze
 from .eyes_only_convnextv2 import EyesOnlyConvNeXtV2Gaze
+from .eyes_only_mobilevitv2 import EyesOnlyMobileViTv2Gaze
 from .face_only_mobile_vit import FaceOnlyMobileViTGaze
 from .mobilevitv2_multistream import MobileViTv2Multistream
 from .repvit_multistream import RepViTMultistream
@@ -67,6 +68,7 @@ __all__ = [
     "EyesOnlyMobileNetV4Gaze",
     "EyesOnlyFastViTGaze",
     "EyesOnlyConvNeXtV2Gaze",
+    "EyesOnlyMobileViTv2Gaze",
     "FaceOnlyMobileViTGaze",
     "MobileViTv2Multistream",
     "RepViTMultistream",
