@@ -1,3 +1,4 @@
+import contextlib
 import os
 import tempfile
 import time
@@ -7,7 +8,7 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as data
 
-from . import accel
+from . import accel, accelerate_utils
 from .dataset import (
     AugmentedSubset,
     build_dataset,
@@ -95,8 +96,29 @@ def train(args):
 
 def _run_training(args):
     start_time = time.perf_counter()
-    device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
+
+    # Initialize Accelerate for distributed training and mixed precision
+    use_accelerate = accelerate_utils.should_use_accelerate(args)
+    if use_accelerate:
+        accelerator = accelerate_utils.init_accelerator(
+            mixed_precision=getattr(args, "mixed_precision", "auto"),
+            gradient_accumulation_steps=getattr(args, "gradient_accumulation_steps", 1),
+            log_with=getattr(args, "log_backend", "tensorboard"),
+        )
+    else:
+        accelerator = None
+
+    # Configure backend optimizations (TF32, cuDNN) -- complementary to Accelerate
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
+
+    # Determine device: Accelerate picks the right one, but respect --cpu override
+    if args.cpu:
+        device = torch.device("cpu")
+    elif use_accelerate:
+        device = accelerator.device
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if args.input_mode == "multistream":
         dataset = build_multistream_dataset_maybe_video(args)
     else:
@@ -112,6 +134,9 @@ def _run_training(args):
     splits = select_splits(all_splits, args.fold_index)
 
     log(f"Device: {device}")
+    if use_accelerate:
+        log(f"Accelerate: mixed_precision={getattr(args, 'mixed_precision', 'auto')} "
+            f"distributed={accelerator.distributed_type.name}")
     log(f"Cross validation: {args.folds} folds by recording id")
     backbone_str = (f" backbone={args.backbone}"
                     if args.input_mode == "multistream" and hasattr(args, "backbone")
@@ -123,7 +148,10 @@ def _run_training(args):
 
     summaries = []
     for split in splits:
-        summary = train_one_fold(args, dataset, split, device)
+        summary = train_one_fold(
+            args, dataset, split, device,
+            accelerator=accelerator, use_accelerate=use_accelerate
+        )
         summaries.append(summary)
 
     total_time = time.perf_counter() - start_time
@@ -138,7 +166,7 @@ def _run_training(args):
         )
 
 
-def train_one_fold(args, dataset, split, device):
+def train_one_fold(args, dataset, split, device, accelerator=None, use_accelerate=False):
     fold_start = time.perf_counter()
     fold = split["fold"]
     train_indices = dataset.indices_for_recordings(split["train_recordings"])
@@ -167,7 +195,9 @@ def train_one_fold(args, dataset, split, device):
         output_activation=getattr(args, "output_activation", "none"),
         gaze_range=getattr(args, "gaze_range", 4.0),
         **vivit_kwargs_from_args(args),
-    ).to(device)
+    )
+    if not use_accelerate:
+        model = model.to(device)
     if getattr(args, "compile", False):
         model = _maybe_compile(model)
     optimizer = torch.optim.AdamW(
@@ -176,9 +206,17 @@ def train_one_fold(args, dataset, split, device):
         weight_decay=args.weight_decay,
     )
 
-    amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
-    scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
-    log(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
+    # Use Accelerate for device placement and mixed precision, or fall back to custom AMP
+    if use_accelerate:
+        model, optimizer = accelerator.prepare(model, optimizer)
+        amp_enabled, amp_dtype = False, None  # Accelerate handles mixed precision
+        scaler = None
+        log(f"Fold {fold} accelerate mixed_precision={accelerator.mixed_precision} "
+            f"distributed_type={accelerator.distributed_type.name}")
+    else:
+        amp_enabled, amp_dtype = accel.resolve_amp(device, getattr(args, "amp", False))
+        scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
+        log(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
 
     # Loss-scale: a fixed multiplier on the regression loss (≈ lr * scale for
     # that backbone). Zhu et al. train AFFNet with loss * 4; we default to 4 for
@@ -203,6 +241,11 @@ def train_one_fold(args, dataset, split, device):
     train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers,
                                augment_transform=aug_transform)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
+
+    # Wrap dataloaders with Accelerate for distributed sampling and batching
+    if use_accelerate:
+        train_loader = accelerator.prepare(train_loader)
+        val_loader = accelerator.prepare(val_loader)
 
     # Domain-adversarial subject invariance (DANN). Built after the optimizer
     # and loader so it can size the lambda schedule to the fold's step count and
@@ -258,6 +301,8 @@ def train_one_fold(args, dataset, split, device):
             amp_dtype=amp_dtype,
             adv=adv,
             loss_scale=loss_scale,
+            accelerator=accelerator,
+            use_accelerate=use_accelerate,
         )
         val_loss, val_error = evaluate(
             model=model,
@@ -268,6 +313,8 @@ def train_one_fold(args, dataset, split, device):
             input_mode=args.input_mode,
             amp_enabled=amp_enabled,
             amp_dtype=amp_dtype,
+            accelerator=accelerator,
+            use_accelerate=use_accelerate,
         )
         epoch_time = time.perf_counter() - epoch_start
         current_lr = optimizer.param_groups[0]["lr"]
@@ -282,37 +329,50 @@ def train_one_fold(args, dataset, split, device):
         if scheduler is not None:
             scheduler.step()
 
-        checkpoint = {
-            "model": _unwrap(model).state_dict(),
-            "gaze_mean": gaze_mean,
-            "gaze_std": gaze_std,
-            "args": vars(args),
-            "input_mode": args.input_mode,
-            "fold": fold,
-            "train_recordings": split["train_recordings"],
-            "val_recordings": split["val_recordings"],
-            "epoch": epoch + 1,
-            "val_loss": val_loss,
-            "val_error": val_error,
-        }
-        torch.save(checkpoint, out_path / f"fold{fold}_last_{args.backbone}_gaze_segmenter.pth")
+        # Only save checkpoints from the main process in distributed training
+        if not use_accelerate or accelerator.is_main_process:
+            checkpoint = {
+                "model": _unwrap(model).state_dict(),
+                "gaze_mean": gaze_mean,
+                "gaze_std": gaze_std,
+                "args": vars(args),
+                "input_mode": args.input_mode,
+                "fold": fold,
+                "train_recordings": split["train_recordings"],
+                "val_recordings": split["val_recordings"],
+                "epoch": epoch + 1,
+                "val_loss": val_loss,
+                "val_error": val_error,
+            }
+            torch.save(checkpoint, out_path / f"fold{fold}_last_{args.backbone}_gaze_segmenter.pth")
 
-        current = val_loss if monitor == "val_loss" else val_error
-        best_so_far = best_val_loss if monitor == "val_loss" else best_val_error
-        if current < best_so_far - min_delta:
-            best_val_loss = val_loss
-            best_val_error = val_error
-            epochs_since_improve = 0
-            torch.save(checkpoint, out_path / f"fold{fold}_best_{args.backbone}_gaze_segmenter.pth")
+            current = val_loss if monitor == "val_loss" else val_error
+            best_so_far = best_val_loss if monitor == "val_loss" else best_val_error
+            if current < best_so_far - min_delta:
+                best_val_loss = val_loss
+                best_val_error = val_error
+                epochs_since_improve = 0
+                torch.save(checkpoint, out_path / f"fold{fold}_best_{args.backbone}_gaze_segmenter.pth")
+            else:
+                epochs_since_improve += 1
+                if patience is not None and epochs_since_improve >= patience:
+                    log(
+                        f"Fold {fold} early stop at epoch {epoch + 1}/{args.epochs}: "
+                        f"{monitor} did not improve by >= {min_delta} for "
+                        f"{patience} epochs (best {monitor}={best_so_far:.6f})"
+                    )
+                    break
         else:
-            epochs_since_improve += 1
-            if patience is not None and epochs_since_improve >= patience:
-                log(
-                    f"Fold {fold} early stop at epoch {epoch + 1}/{args.epochs}: "
-                    f"{monitor} did not improve by >= {min_delta} for "
-                    f"{patience} epochs (best {monitor}={best_so_far:.6f})"
-                )
-                break
+            current = val_loss if monitor == "val_loss" else val_error
+            best_so_far = best_val_loss if monitor == "val_loss" else best_val_error
+            if current < best_so_far - min_delta:
+                best_val_loss = val_loss
+                best_val_error = val_error
+                epochs_since_improve = 0
+            else:
+                epochs_since_improve += 1
+                if patience is not None and epochs_since_improve >= patience:
+                    break
 
     if adv is not None:
         adv.remove()
@@ -348,6 +408,8 @@ def train_epoch(
     amp_dtype=None,
     adv=None,
     loss_scale=1.0,
+    accelerator=None,
+    use_accelerate=False,
 ):
     model.train()
     total_loss = 0.0
@@ -358,31 +420,58 @@ def train_epoch(
         optimizer.zero_grad(set_to_none=True)
         adv_loss_val = None
         cur_lambda = None
-        with accel.autocast(device, amp_enabled, amp_dtype):
-            if adv is not None:
-                inputs = batch_multistream_for_mode(batch, device)
-                pred = adv.predict(model, inputs)
-                batch_size = inputs["face"].size(0)
-            else:
-                pred, batch_size = _predict(model, batch, input_mode, device)
-            target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
-            reg_loss = F.smooth_l1_loss(pred, target)
-            # Scale the loss used for backprop (≈ lr * scale); keep reg_loss
-            # itself for reporting so logged train loss is comparable across
-            # backbones regardless of the scale.
-            loss = reg_loss * loss_scale
-            if adv is not None:
-                adv_loss, cur_lambda = adv.loss(batch["rec"])
-                loss = loss + adv_loss
-                adv_loss_val = adv_loss.item()
 
-        if scaler is not None:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+        # Use Accelerate's mixed precision and backward if available
+        if use_accelerate:
+            with accelerator.accumulate(model):
+                # Autocast context based on Accelerate's mixed_precision setting
+                if accelerator.mixed_precision == "bf16":
+                    amp_context = torch.cuda.amp.autocast(dtype=torch.bfloat16)
+                elif accelerator.mixed_precision == "fp16":
+                    amp_context = torch.cuda.amp.autocast(dtype=torch.float16)
+                else:
+                    amp_context = contextlib.nullcontext()
+
+                with amp_context:
+                    if adv is not None:
+                        inputs = batch_multistream_for_mode(batch, device)
+                        pred = adv.predict(model, inputs)
+                        batch_size = inputs["face"].size(0)
+                    else:
+                        pred, batch_size = _predict(model, batch, input_mode, device)
+                    target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
+                    reg_loss = F.smooth_l1_loss(pred, target)
+                    loss = reg_loss * loss_scale
+                    if adv is not None:
+                        adv_loss, cur_lambda = adv.loss(batch["rec"])
+                        loss = loss + adv_loss
+                        adv_loss_val = adv_loss.item()
+
+                accelerator.backward(loss)
+                optimizer.step()
         else:
-            loss.backward()
-            optimizer.step()
+            with accel.autocast(device, amp_enabled, amp_dtype):
+                if adv is not None:
+                    inputs = batch_multistream_for_mode(batch, device)
+                    pred = adv.predict(model, inputs)
+                    batch_size = inputs["face"].size(0)
+                else:
+                    pred, batch_size = _predict(model, batch, input_mode, device)
+                target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
+                reg_loss = F.smooth_l1_loss(pred, target)
+                loss = reg_loss * loss_scale
+                if adv is not None:
+                    adv_loss, cur_lambda = adv.loss(batch["rec"])
+                    loss = loss + adv_loss
+                    adv_loss_val = adv_loss.item()
+
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
         if adv is not None:
             adv.advance()
 
@@ -408,14 +497,26 @@ def train_epoch(
 
 
 @torch.no_grad()
-def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode, amp_enabled=False, amp_dtype=None):
+def evaluate(model, loader, gaze_mean, gaze_std, device, input_mode, amp_enabled=False, amp_dtype=None, accelerator=None, use_accelerate=False):
     model.eval()
     total_loss = 0.0
     total_error = 0.0
     total_count = 0
     for batch in loader:
-        with accel.autocast(device, amp_enabled, amp_dtype):
-            pred_norm, batch_size = _predict(model, batch, input_mode, device)
+        if use_accelerate:
+            # Autocast context based on Accelerate's mixed_precision setting
+            if accelerator.mixed_precision == "bf16":
+                amp_context = torch.cuda.amp.autocast(dtype=torch.bfloat16)
+            elif accelerator.mixed_precision == "fp16":
+                amp_context = torch.cuda.amp.autocast(dtype=torch.float16)
+            else:
+                amp_context = contextlib.nullcontext()
+            with amp_context:
+                pred_norm, batch_size = _predict(model, batch, input_mode, device)
+        else:
+            with accel.autocast(device, amp_enabled, amp_dtype):
+                pred_norm, batch_size = _predict(model, batch, input_mode, device)
+
         pred_norm = pred_norm.float()
         gaze = batch["gaze"].to(device)
         target = normalize_gaze(gaze, gaze_mean, gaze_std)

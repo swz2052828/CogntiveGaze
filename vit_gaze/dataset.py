@@ -499,3 +499,22 @@ def build_multistream_dataset_maybe_video(args):
             stride=int(getattr(args, "temporal_stride", 1)),
         )
     return dataset
+
+
+def sync_vivit_temporal_window_from_checkpoint(args, checkpoint_path):
+    """Patch ``args.temporal_window`` / ``temporal_stride`` from a checkpoint.
+
+    Stages that rebuild a vivit model from a checkpoint but do not expose a
+    ``--temporal-window`` flag of their own (svrsearch, metacompare) must wrap
+    the video dataset with the SAME window the checkpoint's model was built
+    with. Otherwise the dataset falls back to the default T=8 while the model is
+    rebuilt at the checkpoint's T, and vivit raises ``T_data != T_model``. The
+    temporal_window is recorded in the checkpoint's saved training args.
+
+    No-op for non-vivit backbones.
+    """
+    if getattr(args, "backbone", None) != "vivit":
+        return
+    saved = torch.load(checkpoint_path, map_location="cpu").get("args", {})
+    args.temporal_window = int(saved.get("temporal_window", 8))
+    args.temporal_stride = int(saved.get("temporal_stride", 1))

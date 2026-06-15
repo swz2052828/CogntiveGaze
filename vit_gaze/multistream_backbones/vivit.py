@@ -51,6 +51,7 @@ class ViViTMultistream(MultistreamBackboneBase):
         temporal_window: int = 8,
         num_temporal_layers: int = 4,
         num_temporal_heads: int = 8,
+        temporal_dim: int = 512,
         temporal_mlp_ratio: float = 4.0,
         temporal_dropout: float = 0.1,
     ):
@@ -64,22 +65,37 @@ class ViViTMultistream(MultistreamBackboneBase):
         # Inherit grid requirement from the spatial backbone (no metadata change).
         self.requires_grid = bool(getattr(spatial_backbone, "requires_grid", False))
 
-        # Learnable temporal positional embedding (T positions, D dim).
-        self.temporal_pos_embed = nn.Parameter(torch.zeros(1, temporal_window, feature_dim))
+        # The temporal transformer runs at temporal_dim, NOT the (wide) per-frame
+        # feature_dim. A TransformerEncoderLayer's parameter count scales with
+        # d_model**2, so attending over the raw fused feature (768*3+grid = 2304+)
+        # made the temporal block ~280M params -- 3x the ViT-B/16 backbone -- for
+        # what is only T<=8 tokens of context. We project each frame down to
+        # temporal_dim before attention and back up before the gated residual.
+        # temporal_dim=feature_dim (or 0/None) recovers the un-projected model.
+        self.temporal_dim = int(temporal_dim) if temporal_dim else feature_dim
+        if self.temporal_dim != feature_dim:
+            self.temporal_in = nn.Linear(feature_dim, self.temporal_dim)
+            self.temporal_out = nn.Linear(self.temporal_dim, feature_dim)
+        else:
+            self.temporal_in = nn.Identity()
+            self.temporal_out = nn.Identity()
+
+        # Learnable temporal positional embedding (T positions, temporal_dim).
+        self.temporal_pos_embed = nn.Parameter(torch.zeros(1, temporal_window, self.temporal_dim))
         nn.init.trunc_normal_(self.temporal_pos_embed, std=0.02)
 
         # Temporal transformer (encoder-only; pre-LN; no causal mask).
         layer = nn.TransformerEncoderLayer(
-            d_model=feature_dim,
+            d_model=self.temporal_dim,
             nhead=num_temporal_heads,
-            dim_feedforward=int(feature_dim * temporal_mlp_ratio),
+            dim_feedforward=int(self.temporal_dim * temporal_mlp_ratio),
             dropout=temporal_dropout,
             activation="gelu",
             batch_first=True,
             norm_first=True,
         )
         self.temporal_encoder = nn.TransformerEncoder(layer, num_temporal_layers)
-        self.temporal_ln = nn.LayerNorm(feature_dim)
+        self.temporal_ln = nn.LayerNorm(self.temporal_dim)
 
         # LayerScale-style residual gate (CaiT, Touvron et al. 2021), init 0.
         # At init the temporal branch contributes nothing and the read-out is the
@@ -136,11 +152,14 @@ class ViViTMultistream(MultistreamBackboneBase):
         # the last frame's raw spatial feature; the temporal branch only
         # perturbs it once the gate has learned to open.
         spatial_readout = feats[:, -1, :]                                        # (B, D)
-        temporal = self.temporal_encoder(feats + self.temporal_pos_embed)
-        temporal = self.temporal_ln(temporal)[:, -1, :]                          # (B, D)
+        t = self.temporal_in(feats)                                              # (B, T, d_t)
+        t = self.temporal_encoder(t + self.temporal_pos_embed)                   # (B, T, d_t)
+        t = self.temporal_ln(t)[:, -1, :]                                        # (B, d_t)
+        t = self.temporal_out(t)                                                 # (B, D)
 
-        # 3) Gated residual read-out.
-        return spatial_readout + self.temporal_gate * temporal                   # (B, D)
+        # 3) Gated residual read-out (gate is feature_dim, so at init temporal
+        # contributes nothing and the read-out is the clean last-frame feature).
+        return spatial_readout + self.temporal_gate * t                          # (B, D)
 
     def forward(self, face, eye_left, eye_right, grid=None):
         return self.head(self.forward_features(face, eye_left, eye_right, grid))
@@ -155,6 +174,7 @@ def build_vivit(
     temporal_window: int,
     num_temporal_layers: int,
     num_temporal_heads: int,
+    temporal_dim: int = 512,
 ):
     """Factory: build a ViViTMultistream around an existing spatial backbone.
 
@@ -184,6 +204,7 @@ def build_vivit(
         temporal_window=temporal_window,
         num_temporal_layers=num_temporal_layers,
         num_temporal_heads=num_temporal_heads,
+        temporal_dim=temporal_dim,
     )
 
 
