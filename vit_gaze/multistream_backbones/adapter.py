@@ -83,7 +83,7 @@ class MultistreamBackboneBase(nn.Module, ABC):
         return readout[:-1](fused)
 
 
-REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet")
+REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet", "convnextv2_film")
 SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "eyes_only_convnextv2", "eyes_only_mobilevitv2", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "convnextv2_nano", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4")
 
 
@@ -280,6 +280,15 @@ def build_multistream_backbone(
         from .eyes_only_convnextv2 import EyesOnlyConvNeXtV2Gaze
 
         return EyesOnlyConvNeXtV2Gaze(
+            weights=weights,
+            freeze_encoder=freeze_encoder,
+            use_grid=use_grid,
+            grid_size=grid_size,
+        )
+    if backbone == "convnextv2_film":
+        from .convnextv2_film import ConvNeXtV2FiLMMultistream
+
+        return ConvNeXtV2FiLMMultistream(
             weights=weights,
             freeze_encoder=freeze_encoder,
             use_grid=use_grid,
