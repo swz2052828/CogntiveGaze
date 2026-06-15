@@ -47,7 +47,7 @@ from .eyes_only_mobilevitv2 import EyesOnlyMobileViTv2Gaze
 from .face_only_mobile_vit import FaceOnlyMobileViTGaze
 from .mobilevitv2_multistream import MobileViTv2Multistream
 from .repvit_multistream import RepViTMultistream
-from .convnextv2_multistream import ConvNeXtV2Multistream
+from .convnextv2_multistream import ConvNeXtV2Multistream, ConvNeXtV2NanoMultistream
 from .normface_convnext import NormFaceConvNeXtMultistream
 from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
@@ -73,6 +73,7 @@ __all__ = [
     "MobileViTv2Multistream",
     "RepViTMultistream",
     "ConvNeXtV2Multistream",
+    "ConvNeXtV2NanoMultistream",
     "NormFaceConvNeXtMultistream",
     "CNNTransformerGaze",
     "FovealViTMultistream",

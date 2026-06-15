@@ -28,6 +28,7 @@ class ConvNeXtV2Multistream(MultistreamBackboneBase):
     """Shared ConvNeXtV2-Femto over face + both eyes (+ optional grid) -> MLP head."""
 
     requires_grid = False
+    model_name = _CONVNEXTV2_MODEL  # subclasses override to scale the encoder
 
     def __init__(
         self,
@@ -38,7 +39,7 @@ class ConvNeXtV2Multistream(MultistreamBackboneBase):
     ):
         super().__init__()
 
-        self.encoder = build_timm_encoder(_CONVNEXTV2_MODEL, weights)
+        self.encoder = build_timm_encoder(self.model_name, weights)
         hidden_dim = timm_feature_dim(self.encoder)
 
         if freeze_encoder:
@@ -85,3 +86,11 @@ class ConvNeXtV2Multistream(MultistreamBackboneBase):
 
     def forward(self, face, eye_left, eye_right, grid=None):
         return self.head(self.forward_features(face, eye_left, eye_right, grid))
+
+
+class ConvNeXtV2NanoMultistream(ConvNeXtV2Multistream):
+    """ConvNeXtV2-Nano (~15M, 640-d) variant. Scales the winning femto family up
+    to test whether more capacity improves the *uncalibrated* base (Goal 2) --
+    the one metric that is NOT capacity-saturated (calibrated svr_embed is)."""
+
+    model_name = "convnextv2_nano.fcmae_ft_in1k"
