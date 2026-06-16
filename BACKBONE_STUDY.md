@@ -91,6 +91,34 @@ eyes_only_mobilenet_v3 (3.1M, 1.97px).**
 - **Avoid:** normface, grid-FiLM, repvit, and any nano-scale model at LR=1e-4
   (collapses; needs a lower LR).
 
+## Wave 2 (pretraining-driven, 2026-06-16)
+
+Hypothesis: since architecture tricks failed and pretraining won, bet on
+pretraining quality + one info-augmenting structural idea.
+
+| Model | Params | base | fc_ft@8 | fc_ft@16 | svr_embed@64 | verdict |
+|---|---|---|---|---|---|---|
+| **eyes_only_convnextv2_atto** | 3.6M | 4.67 | 2.80 | 2.59 | **1.818** | study-best calibrated |
+| convnextv2_atto (full) | 3.8M | 4.52 | 2.65 | 2.43 | 1.855 | balanced edge |
+| eyes_only_convnextv2_binocular | 5.3M | 4.38 | 2.55 | 2.31 | 1.868 | binocular WORKS (-0.2px) |
+| eyes_only_convnextv2_atto_binocular | 3.7M | 4.84 | 2.69 | 2.46 | 1.839 | wash (didn't stack) |
+| dinov2 (SSL ViT-S) | 22M | 5.23 | 3.65 | 3.44 | 2.82 | FAILED |
+| eva02 (MIM ViT-S) | 22M | 4.91 | 3.09 | 2.89 | 2.11 | dominated |
+| eyes_only_eva02_tiny | 5.6M | 4.92 | 3.33 | 3.18 | 2.01 | dominated |
+
+Wave-2 findings:
+1. **ViT pretraining loses to conv-GRN for gaze** (dinov2, eva02, eva02_tiny all
+   dominated). Gaze is fine-grained *geometric* regression (iris position);
+   DINOv2/CLIP-distilled features are semantically rich but *invariant to the
+   small spatial detail gaze needs*. Conv inductive bias + GRN/FCMAE preserves it.
+2. **Binocular interaction `[L,R,|L-R|,L*R]` is the one architecture trick that
+   works** (-0.2px on base and low-K fc_ft) -- because it *augments* info (head
+   can ignore) rather than *constraining* (why normface/FiLM failed). But its
+   benefit is encoder-dependent (helps femto, not atto) and doesn't stack with atto.
+3. **The convnextv2 family is the answer at the small end**: atto (3.6M) best
+   calibrated 1.818; femto-full best base 4.33; femto_binoc/convnextv2-full best
+   real-world low-K fc_ft ~2.54.
+
 ## Scaling: the winning family does NOT scale up (resolved)
 
 `convnextv2_nano` (15.6M) is unstable/underfit on this task at every LR tried:
