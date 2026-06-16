@@ -1,5 +1,55 @@
 # Gaze Backbone Study — Final Synthesis
 
+> **CONVERGED (2026-06-16).** ~19 backbones across 2 waves. Definitive answer:
+> a **small ConvNeXtV2** (GRN+FCMAE) wins all three goals. Conv inductive bias +
+> masked-autoencoder pretraining beats every ViT (DINOv2 SSL, EVA-02 MIM) and
+> every architecture trick (normface, grid-FiLM both failed; only binocular
+> interaction helped). Final per-goal recommendations and the uncalibrated
+> base/base_adv table are in the two sections immediately below; wave-by-wave
+> detail follows.
+
+## Converged conclusion — final recommendations
+
+| Goal | Backbone | Params | Metric |
+|---|---|---|---|
+| ① Edge / smartphone | **eyes_only_convnextv2_atto** | 3.6M | svr_embed@64 **1.818**, fc_ft@8 2.80 |
+| ② Best uncalibrated base | **convnextv2 (femto, full)** | 5.3M | base **4.33**, base_adv **4.56** |
+| ③ Best calibrated (high-K) | **eyes_only_convnextv2_atto** | 3.6M | svr_embed@64 **1.818** |
+| ③ Best real-world low-K (5/9/25 pts) | **convnextv2 (full)** / femto_binocular | 5.3M | fc_ft@8 **2.54**, fc_ft@16 **2.31** |
+
+Deployment recipe: **eyes_only_convnextv2_atto (3.6M)** on-device, calibrated with
+**fc_ft** at the realistic 9-25 points. For a server with no size constraint,
+**convnextv2 (full)** is marginally better on base and low-K.
+
+## Uncalibrated base vs base_adv (Goal 2 metrics, from training logs)
+
+| Model | base | base_adv | adv effect |
+|---|---|---|---|
+| **convnextv2 (femto full)** | **4.31** | **4.56** | hurts (+0.25) |
+| eyes_only_convnextv2_binocular | 4.38 | 4.60 | hurts (+0.22) |
+| convnextv2_atto (full) | 4.50 | 4.62 | hurts (+0.12) |
+| eyes_only_convnextv2 | 4.58 | 4.61 | ~neutral (+0.04) |
+| eyes_only_convnextv2_atto | 4.66 | 4.60 | ~neutral (-0.06) |
+| eyes_only_convnextv2_atto_binocular | 4.83 | 4.60 | helps (-0.23) |
+| eva02 (MIM ViT) | 4.88 | 5.70 | hurts badly (+0.82) |
+| eyes_only_eva02_tiny | 4.91 | 4.86 | ~neutral (-0.05) |
+| dinov2 (SSL ViT) | 5.23 | 6.00 | hurts badly (+0.77) |
+| convnextv2_film | 4.72 | 5.95 | hurts badly (+1.23) |
+
+base_adv takeaways: (1) the GRN conv family has the lowest base AND base_adv;
+(2) adversarial training *hurts* the strong conv models (their features are
+already subject-decorrelated by GRN) and hurts the ViTs even more, but is
+~neutral on the eyes-only conv variants -- consistent with the earlier finding
+that adv is redundant once the representation is good. The best *uncalibrated*
+model regardless of calibration is **convnextv2 (femto full): base 4.33 /
+base_adv 4.56**.
+
+> NOTE: convnextv2 (femto) and eyes_only_convnextv2_binocular hit the 20-epoch
+> training cap (val still improving), so a 40-epoch rerun is in flight to test
+> whether longer training lowers base further. Results to be appended.
+
+
+
 A controlled comparison of multistream gaze backbones in the `vit_gaze` package,
 evaluated through the meta-calibration pipeline (base train → subject-adv train →
 metatrain → SVR/embedding search → metacompare). All runs are 5-fold,
