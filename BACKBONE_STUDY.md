@@ -91,8 +91,15 @@ eyes_only_mobilenet_v3 (3.1M, 1.97px).**
 - **Avoid:** normface, grid-FiLM, repvit, and any nano-scale model at LR=1e-4
   (collapses; needs a lower LR).
 
-## Open question
+## Scaling: the winning family does NOT scale up (resolved)
 
-`convnextv2_nano` collapsed at LR=1e-4 (predict-the-mean, base 8.46). A rerun at
-LR=5e-5 (job pinned to identical pre-merge code) tests whether the GRN family
-*scales* to beat 4.33 base when it doesn't collapse. Result pending.
+`convnextv2_nano` (15.6M) is unstable/underfit on this task at every LR tried:
+base 8.46 @ LR=1e-4 (full predict-the-mean collapse), base 7.46 @ LR=5e-5 (still
+badly underfit, svr_embed@64 only 6.05). The GRN+FCMAE family's sweet spot is
+**small**: atto (3.6M) gives the study-best svr_embed@64 1.818 and femto (5.3M)
+the best base 4.33, while scaling to 15.6M fails. On this dataset size, **smaller
+is better** — capacity hurts. (Possible confounds: 20-epoch budget, limited gaze
+data; not pursued since small models clearly win.)
+
+This strengthens the conclusion: the answer to all three goals is a **small**
+ConvNeXtV2 (atto/femto), not a bigger model.
