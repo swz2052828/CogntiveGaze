@@ -54,7 +54,7 @@ from .dinov2_multistream import DINOv2Multistream
 from .eva02_multistream import EVA02Multistream
 from .eyes_only_eva02_tiny import EyesOnlyEVA02TinyGaze
 from .eyes_only_convnextv2_atto import EyesOnlyConvNeXtV2AttoGaze
-from .eyes_only_convnextv2_binocular import EyesOnlyConvNeXtV2BinocularGaze
+from .eyes_only_convnextv2_binocular import EyesOnlyConvNeXtV2BinocularGaze, EyesOnlyConvNeXtV2AttoBinocularGaze
 from .normface_convnext import NormFaceConvNeXtMultistream
 from .foveal_vit import FovealViTMultistream
 from .itracker import ITrackerMultistream
@@ -88,6 +88,7 @@ __all__ = [
     "EyesOnlyEVA02TinyGaze",
     "EyesOnlyConvNeXtV2AttoGaze",
     "EyesOnlyConvNeXtV2BinocularGaze",
+    "EyesOnlyConvNeXtV2AttoBinocularGaze",
     "NormFaceConvNeXtMultistream",
     "CNNTransformerGaze",
     "FovealViTMultistream",

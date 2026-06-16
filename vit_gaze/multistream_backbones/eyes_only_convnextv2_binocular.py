@@ -29,3 +29,11 @@ class EyesOnlyConvNeXtV2BinocularGaze(TimmEyesOnlyBase):
         del face, grid
         l, r = self._eye_feats(eye_left, eye_right)
         return torch.cat([l, r, torch.abs(l - r), l * r], dim=1)
+
+
+class EyesOnlyConvNeXtV2AttoBinocularGaze(EyesOnlyConvNeXtV2BinocularGaze):
+    """Binocular interaction on the ATTO encoder -- stacks the two confirmed-good
+    findings (atto = study-best svr_embed@64 1.818 at 3.6M; binocular interaction
+    = -0.2px on base and low-K fc_ft) into one ~3.6M model."""
+
+    model_name = "convnextv2_atto.fcmae_ft_in1k"

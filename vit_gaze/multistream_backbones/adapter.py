@@ -84,7 +84,7 @@ class MultistreamBackboneBase(nn.Module, ABC):
 
 
 REQUIRES_GRID = ("itracker", "mobilenet_v3", "affnet", "mgazenet", "convnextv2_film")
-SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "eyes_only_convnextv2", "eyes_only_mobilevitv2", "eyes_only_eva02_tiny", "eyes_only_convnextv2_atto", "eyes_only_convnextv2_binocular", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "convnextv2_nano", "convnextv2_atto", "dinov2", "eva02", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4")
+SUPPORTS_NO_GRID = ("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "eyes_only_convnextv2", "eyes_only_mobilevitv2", "eyes_only_eva02_tiny", "eyes_only_convnextv2_atto", "eyes_only_convnextv2_binocular", "eyes_only_convnextv2_atto_binocular", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "convnextv2_nano", "convnextv2_atto", "dinov2", "eva02", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4")
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +312,11 @@ def build_multistream_backbone(
 
         return EyesOnlyConvNeXtV2AttoGaze(weights=weights, freeze_encoder=freeze_encoder,
                                           use_grid=use_grid, grid_size=grid_size)
+    if backbone == "eyes_only_convnextv2_atto_binocular":
+        from .eyes_only_convnextv2_binocular import EyesOnlyConvNeXtV2AttoBinocularGaze
+
+        return EyesOnlyConvNeXtV2AttoBinocularGaze(weights=weights, freeze_encoder=freeze_encoder,
+                                                   use_grid=use_grid, grid_size=grid_size)
     if backbone == "eyes_only_convnextv2_binocular":
         from .eyes_only_convnextv2_binocular import EyesOnlyConvNeXtV2BinocularGaze
 
