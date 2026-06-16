@@ -186,7 +186,7 @@ for SEED in $SEEDS; do
   COMMON_TRAIN="$COMMON_DATA --weights imagenet --epochs $EPOCHS --batch-size $BATCH_SIZE \
     --num-workers $NUM_WORKERS --lr $LR --lr-scheduler $LR_SCHEDULER --augment $AUGMENT \
     --patience $PATIENCE --min-delta $MIN_DELTA --amp --temporal-window $TEMPORAL_WINDOW \
-    --fold-index $FOLD --seed $SEED"
+    --no-accelerate --fold-index $FOLD --seed $SEED"
 
   echo "===================================================="
   echo "[fold $FOLD seed $SEED] starting full pipeline"

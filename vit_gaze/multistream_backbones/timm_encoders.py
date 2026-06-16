@@ -12,8 +12,12 @@ import torch
 import torch.nn as nn
 
 
-def build_timm_encoder(model_name: str, weights: str) -> nn.Module:
-    """Build a timm feature extractor (num_classes=0 -> globally-pooled vector)."""
+def build_timm_encoder(model_name: str, weights: str, **kwargs) -> nn.Module:
+    """Build a timm feature extractor (num_classes=0 -> globally-pooled vector).
+
+    Extra kwargs are forwarded to ``timm.create_model`` (e.g. ``img_size=224``
+    for models like DINOv2 whose default input size differs from our 224 crops).
+    """
     import timm
 
     if weights == "imagenet":
@@ -22,7 +26,8 @@ def build_timm_encoder(model_name: str, weights: str) -> nn.Module:
         pretrained = False
     else:
         raise ValueError("--weights must be 'none' or 'imagenet'")
-    return timm.create_model(model_name, pretrained=pretrained, num_classes=0)
+    return timm.create_model(
+        model_name, pretrained=pretrained, num_classes=0, **kwargs)
 
 
 @torch.no_grad()
