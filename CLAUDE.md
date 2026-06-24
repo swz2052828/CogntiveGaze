@@ -41,6 +41,47 @@ loops are not.
   opencv, numpy <2). Python 3.9. Kept separate so mediapipe's numpy<2 pin does
   not disturb the training env.
 
+## Calibration-point clustering & frame selection
+
+The pre-task calibration frames are produced by a curated clustering pipeline,
+not raw k-means. Touch these before changing how calibration support is built.
+
+**`cluster_calib_points.py`** clusters per-frame iris data into the 9 grid points
+(3x3) per subject. Run with `envs/gaze/bin/python` (numpy 2.x); it's light enough
+for the login node. Pipeline order in `process()`:
+`segment_30 -> cluster -> apply_overrides -> merge_runs -> cycle_phases -> recompute`.
+Outputs `datasets/calib_clusters/subid_<id>_{clusters,centers}.csv` + plots.
+
+- **`merge_runs()`** merges consecutive segments that are the SAME cell +
+  temporally continuous (frame gap <= 12) + spatially neighbouring (centre dist
+  <= 3px) into one cluster — a fixation split by a brief dropout. Runs AFTER
+  overrides.
+- **`OVERRIDES` / `apply_overrides()`** — per-subject DSL operating on original
+  labels sorted by iris_y (selectors: `all`, `seg_top/bot`, `grp_low`, `rest`).
+- **`POST_MERGE_EDITS` / `apply_post_merge_edits()`** — manual edits keyed by the
+  MERGED cluster index shown in `plot_calib_timeorder.py`: `start`/`end` (mark
+  before/after), `remove`, `relabel`, `only` (restrict a cell to listed
+  clusters), `keep` (force-keep, clears before/removed/after + off-grid flag).
+- **Principle (the auto default):** each run = MC(center) -> 8 edges one-by-one
+  -> MC, repeated TWICE. `cycle_phases`/`cycle_completeness` (min_edges=8,
+  min_dur=8) split kept clusters into 2 cycles at MC returns; a complete cycle
+  must reach all 8 edges. Target state: all subjects = 2 complete cycles, every
+  edge reached. Do NOT remove a cluster unless a rule justifies it.
+- **Blinks:** EAR blink detection (`process_calib_windows` -> per-frame `blink`
+  in `calib_processed/<id05d>/metadata.mat`) is overlaid via shared
+  `load_blink()`; blink frames are tagged (`is_blink`), unlinked, not deleted.
+
+**`select_calib_frames.py`** deterministically picks the K support frames
+(replaces leak-prone random-K-from-test). Rules: prefer cycle 2; longer-duration
+cluster wins; distinct point+cycle; middle non-blink frame. K levels:
+**4** (corners), **9** (points), **18/36/72** (9 points x 2 cycles x m=1/2/4
+frames, evenly spaced within a cluster at L*k/(m+1)). Output
+`datasets/calib_selection/calib_selection.csv`.
+
+**`generate_calib_support.py`** (SLURM, facedet env) builds the per-K
+GazeCapture-format support sets `datasets/calib_support_K{K}/<rec05d>/...`.
+Labels are CENTERED cm (see below) — matching the task `labelDotXCam/YCam`.
+
 ## Per-subject calibration must be deploy-faithful (no test-set leakage)
 
 Per-subject calibration uses each subject's **pre-task calibration recording**,
