@@ -84,7 +84,7 @@ class ITrackerMultistream(MultistreamBackboneBase):
             nn.Linear(128, 2),
         )
 
-    def forward(self, face, eye_left, eye_right, grid=None):
+    def forward_features(self, face, eye_left, eye_right, grid=None):
         if grid is None:
             raise ValueError("ITrackerMultistream requires --use-grid.")
         x_eye_l = self.eye_model(eye_left)
@@ -92,4 +92,7 @@ class ITrackerMultistream(MultistreamBackboneBase):
         x_eyes = self.eyes_fc(torch.cat([x_eye_l, x_eye_r], dim=1))
         x_face = self.face_model(face)
         x_grid = self.grid_model(grid)
-        return self.fc(torch.cat([x_eyes, x_face, x_grid], dim=1))
+        return torch.cat([x_eyes, x_face, x_grid], dim=1)
+
+    def forward(self, face, eye_left, eye_right, grid=None):
+        return self.fc(self.forward_features(face, eye_left, eye_right, grid))

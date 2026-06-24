@@ -161,6 +161,388 @@ The diffusion generator picks attention slicing automatically
 (`--attention-slicing auto`): on for low-VRAM GPUs like the 2070 Super, off on
 the 5090 where it would only slow generation down.
 
+### Regularization and generalization (small-cohort overfit)
+
+With ~17 subjects the per-fold train/val loss gap reaches 30–200× on every
+backbone — classic small-cohort overfit. These flags address it. All are
+**off by default** so prior runs are unchanged; opt in to compose them.
+
+- **`--patience N`** — early-stop the fold if the monitored metric does not
+  improve for `N` epochs. Off by default. The best checkpoint is always saved.
+- **`--min-delta D`** — minimum improvement that counts as progress (gates
+  both the patience counter and best-checkpoint saving). Use `>0` with
+  `--patience` to ignore noisy single-epoch dips. Default `0.0` = strict.
+- **`--early-stop-metric {val_loss,val_error}`** — which metric drives
+  patience and best-checkpoint selection. Defaults to `val_error`, the
+  metric actually reported in cm.
+- **`--lr-scheduler {none,cosine,step}`** — anneal LR within each fold to
+  combat the constant-LR overfit plateau. `cosine` =
+  `CosineAnnealingLR(T_max=epochs, eta_min=0)`. `step` =
+  `StepLR(step_size=--step-size, gamma=--step-gamma)` (defaults 3 / 0.5).
+  Current LR is now logged each epoch so schedules are easy to verify.
+- **`--augment {none,light,medium}`** — per-image augmentation on multistream
+  crops, **training only** (validation is always clean). No horizontal flip
+  (gaze labels are screen-relative).
+  - `light`: `ColorJitter(0.2)` + `RandomResizedCrop(scale=0.90–1.0)`.
+  - `medium`: `ColorJitter(0.4)` + `RandomResizedCrop(scale=0.85–1.0)` +
+    `RandomGrayscale(p=0.05)`.
+
+### Subject-invariant features (`--subject-adv`)
+
+Domain-adversarial training (DANN, Ganin & Lempitsky 2016) attaches a
+subject-ID classifier to the fused per-stream feature through a
+**gradient-reversal layer**. The discriminator learns to identify the subject
+from the features; the reversed gradient pushes the encoder toward features
+from which subject identity (head shape, skin tone, camera distance
+appearance) cannot be recovered while gaze cues are retained. This is a
+**regularizer against subject-specific overfit**, not a replacement for
+per-subject calibration — calibration still removes the residual geometric
+offset.
+
+- **`--subject-adv`** — enable it (multistream only; off by default).
+- **`--adv-weight W`** — ceiling for the gradient-reversal strength λ
+  (default `0.1`). λ ramps `0 → W` using the Ganin
+  `2/(1+exp(−10p))−1` schedule so the regressor stabilizes before
+  invariance pressure ramps in. Too high → invariance erases the signal
+  calibration would have used, and `val_coord_error` worsens. Sweep
+  `{0.05, 0.1, 0.3}`.
+- **`--adv-warmup-frac F`** — fraction of total training over which λ
+  reaches `--adv-weight` (default `1.0`, the whole run; smaller values
+  reach full strength sooner).
+
+What to watch in the log: `adv_loss` should rise toward
+`ln(num_subjects)` as λ ramps (encoder winning ⇒ discriminator
+confused). Subject classes are the *current fold's training subjects only*
+— held-out subjects are never seen by the adversary, so the CV protocol is
+preserved. The discriminator is training-only and is **not** saved in the
+inference checkpoint, so `explain` and the `gaze_dynamics` export bridge
+are unchanged. Compose with calibration:
+
+```bash
+# training
+python vit_gaze_segmenter.py train ... \
+  --input-mode multistream --backbone vit \
+  --subject-adv --adv-weight 0.1 \
+  --augment light --lr-scheduler cosine \
+  --patience 8 --min-delta 0.005
+```
+
+The honest expectation is a modest cross-subject error reduction with the
+bigger structural win being reduced overfit. The result that justifies
+the approach in a writeup is **adversary + calibration beating
+calibration-alone** — especially on the hardest fold.
+
+## Meta-learned per-subject calibration (`metatrain`)
+
+A separate subcommand that learns a **feature-space, nonlinear** replacement
+for per-subject SVR and meta-trains it so adapting on only K calibration
+frames generalizes to the rest of a subject's session. This attacks the ~5 cm
+floor directly: SVR linearly corrects the 2D output, whereas this adapts the
+full fused feature the head reads.
+
+- **Each recording is a task.** An episode splits a recording into a *support*
+  set (K calibration frames) and a *query* set (the rest) — the enrollment
+  scenario, optimized end to end (ANIL + FOMAML; Raghu 2020 / Finn 2017).
+- **Encoder frozen** (ANIL), so the fused feature is constant per frame and is
+  **cached once per fold** — meta-training runs on cached `[N, dim]` tensors
+  with no backbone in the loop (fast even on the 2070 Super).
+- Meta-learned parameters: the shared gaze **readout** + the **adapter init**.
+  The inner loop adapts only the adapter; the outer loop (first-order)
+  minimizes post-adaptation query loss.
+- **Works on every multistream backbone**, not just `vit`. All five expose
+  `forward_features` (the fused vector feeding their final readout — `.head`
+  for `vit`, `.fc` for the CNN baselines), and the adapter dimension is
+  inferred from the cached features automatically. The four CNN backbones
+  require `--use-grid` (as in normal training). Pick the backbone with
+  `--backbone {vit,itracker,mobilenet_v3,affnet,mgazenet}`.
+
+Adapters (`--adapter`):
+- **`film`** (default) — per-subject `γ,β` scale+shift on the fused feature
+  (`2·dim` params; robust at small K).
+- **`lora`** — low-rank residual at the head input (`--lora-rank`,
+  `--lora-alpha`; more expressive, higher overfit risk at small K).
+
+Key flags: `--init-checkpoint` (load a trained `train` checkpoint's
+encoder+head so meta-learning starts from gaze-tuned features — strongly
+recommended), `--meta-support K`, `--meta-query`, `--inner-steps`,
+`--inner-lr`, `--outer-lr`, `--meta-iters`, `--tasks-per-batch`,
+`--adapt-steps` (inner steps at enrollment/eval).
+
+```bash
+# 1) train the base model normally (produces fold checkpoints)
+python vit_gaze_segmenter.py train ... --input-mode multistream --backbone vit \
+  --weights imagenet --out-path ./base_out
+
+# 2) meta-learn the calibration adapter on top of the frozen, trained encoder
+python vit_gaze_segmenter.py metatrain ... --backbone vit \
+  --init-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --adapter film --meta-support 16 --inner-steps 5 --meta-iters 2000 \
+  --fold-index 0
+```
+
+Each fold logs `meta_pre_adapt_error` vs `meta_post_adapt_error` (cm) on the
+held-out recordings — the apples-to-apples number against the SVR-calibrated
+floor. The headline comparison for a writeup is **meta-adaptation vs SVR**
+at the same K, and ideally **meta-adaptation stacked on `--subject-adv`
+features**.
+
+### Enrollment-aware export (`gaze_dynamics/export.py --meta`)
+
+To get adapter-calibrated predictions into the `gaze_dynamics` analyzers, run
+the bridge with `--meta`. The exporter enrolls per recording on the first
+`--enroll-k` time-ordered frames (a realistic "calibration phase at session
+start"), then writes one per-recording file containing predictions on the
+remaining frames:
+
+```bash
+python -m gaze_dynamics.export ... \
+  --checkpoint ./meta_out/fold0_meta_film_vit_gaze.pth \
+  --meta --enroll-k 16 --out-dir ./meta_calibrated_gaze
+```
+
+`--inner-steps` / `--inner-lr` override the values baked into the checkpoint
+if you want to tune enrollment without retraining.
+
+### Animating gaze predictions (`visualize`)
+
+To *see* where a prediction is wrong (and how calibration corrects it), the
+`visualize` subcommand renders one recording's gaze trace on the screen
+rectangle as a GIF — ground-truth dot + base / SVR / meta predictions, each
+with a fading trail and an error vector to ground truth. The first
+`--enroll-k` frames are shaded as the calibration phase, so the before/after
+effect is visible:
+
+```bash
+python vit_gaze_segmenter.py visualize \
+  --data-path ../datasets/ProcessedData --eye-path ../datasets/ProcessedData \
+  --mean-path meanno7 --input-mode multistream --use-grid \
+  --base-checkpoint runs/.../base/seed42/fold2_best_mobilenet_v3_gaze_segmenter.pth \
+  --meta-checkpoint runs/.../meta_on_base/seed42/fold2_meta_film_mobilenet_v3_gaze.pth \
+  --rec 6 --methods base,svr,meta --enroll-k 16 \
+  --svr-C 226.7 --svr-gamma 0.001 --svr-eps 0.094 \
+  --out gaze_rec6.gif --fps 10 --max-frames 200
+```
+
+Pick `--rec` from a **held-out** recording for the fold whose checkpoints
+you're loading (e.g. for the fold-2 checkpoints, rec 6, 22, or 12) — using a
+training recording would show optimistic in-distribution predictions. The
+tool uses the first-K time-ordered protocol (above), so it shows what
+deployment would actually look like with a K-second enrollment phase.
+
+### A note on enrollment protocols
+
+We use **two complementary K-shot protocols** in this codebase, and which one
+you reach for matters for how the result is interpreted:
+
+| Protocol | Where it's used | What it answers |
+|---|---|---|
+| **Random K** | `metacompare`, `metatrain`, `svrsearch` | "Given any K labelled frames from a session, how do calibration methods compare in inherent capacity?" — the **method-comparison** view; isolates the calibration recipe from real-world enrollment confounds. |
+| **First-K time-ordered** | `gaze_dynamics/export.py --meta`, `vit_gaze.visualize_gaze` | "Given a 1-second enrollment phase at session start, what does deployment look like?" — the **deployment-faithful** view; matches how a real app would calibrate. |
+
+The random-K protocol gives every method the same (idealized) K labelled
+points, which makes method comparisons paired and clean (the basis of the
+paired Wilcoxon tests in the K-sweep figure). The first-K protocol is what
+you'd ship; report both when writing up.
+
+### Comparing base / SVR / meta at matched K (`metacompare`)
+
+The result that justifies the meta approach in a writeup is **meta beats SVR
+at the same K on the same support/query draws.** The `metacompare` subcommand
+does exactly that — for each held-out recording it draws `--trials` random
+K-subsets and scores all three:
+
+* **base**: the model's prediction with no per-subject calibration.
+* **svr**: two RBF-SVRs (`--svr-C`, `--svr-eps`, `--svr-gamma`) fit on K
+  `(predicted_xy, true_xy)` pairs, applied to the base predictions.
+* **meta**: `--inner-steps` of SGD on the meta-learned adapter init using K
+  support features.
+
+```bash
+python vit_gaze_segmenter.py metacompare ... \
+  --base-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --meta-checkpoint ./meta_out/fold0_meta_film_vit_gaze.pth \
+  --k 16 --trials 5 --fold-index 0 \
+  --csv-out metacompare.csv
+```
+
+Per fold the log prints per-recording `base / svr / meta` cm errors plus the
+three deltas (`svr_gain`, `meta_gain`, `meta_vs_svr`); a CV summary line at
+the end aggregates across folds. The `--csv-out` flag appends a row per fold,
+which is useful for sweeping `--k` over `{4, 8, 16, 32, 64}` to plot a
+calibration-points-vs-error curve for both methods on the same axes.
+
+**Head-only fine-tune baseline (`--fc-ft`)** — the Zhu et al. recipe
+(`finetuning_freezen.py`): per subject, clone the base model's readout,
+freeze everything else, Adam-train (`--fc-ft-lr` 5e-5, `--fc-ft-weight-decay`
+5e-4, `--fc-ft-steps` 20 — their defaults) on the K support frames, predict
+on the query frames. Uses the *same* cached features as the SVR and meta
+methods, so it's free per draw and a fair head-to-head:
+
+```bash
+python vit_gaze_segmenter.py metacompare ... --fc-ft \
+  --base-checkpoint ... --meta-checkpoint ... --k 16
+```
+
+The summary then includes `fc_ft_gain`, `fc_ft_vs_svr`, and `meta_vs_fc_ft`.
+
+**SVR-on-embeddings baseline (`--svr-embed`)** — Zhu et al.'s actual recipe:
+SVR **replaces** the readout. Per support/query draw, fit two RBF-SVRs from
+the K support fused features to `(x, y)`, predict on the query features.
+Reuses the same cached features as every other method:
+
+```bash
+python vit_gaze_segmenter.py metacompare ... --svr-embed \
+  --svr-embed-C 1.0 --svr-embed-gamma scale --svr-embed-eps 0.1 \
+  --base-checkpoint ... --meta-checkpoint ... --k 16
+```
+
+The summary then includes `svr_embed_gain`, `svr_embed_vs_svr`, and
+`meta_vs_svr_embed`. This is the **direct head-to-head against Zhu et al.'s
+SwarmIntelligentCalibration** at matched K and same encoder. Note that at
+small K (e.g. K=4) the feature dim (~2304) >> K, so this method is in the
+underdetermined regime by design — that's part of what the comparison is
+meant to expose.
+
+**Tuned SVR baseline (`svrsearch`)** — sklearn defaults under-tune the SVR;
+the `svrsearch` subcommand runs a swarm-style global search (PSO over
+`(C, gamma, epsilon)`, search bounds matching Zhu et al.) on the **training**
+subjects of each fold and prints the optimal triple for that fold. Use
+`--space prediction` (default) to tune the prediction-space SVR, or
+`--space embedding` to tune the Zhu-et-al-style embedding-space SVR:
+
+```bash
+# prediction-space (the --svr-* baseline in metacompare)
+python vit_gaze_segmenter.py svrsearch --space prediction ... \
+  --base-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --fold-index 0 --pop 30 --iters 50 --json-out svr_hp_fold0.json
+
+# embedding-space (the --svr-embed baseline, Zhu et al.'s recipe)
+python vit_gaze_segmenter.py svrsearch --space embedding ... \
+  --base-checkpoint ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --fold-index 0 --pop 30 --iters 50 --json-out svr_embed_hp_fold0.json
+```
+
+Each run prints a paste-ready `--svr-C/--svr-gamma/--svr-eps` (or
+`--svr-embed-*`) line. Search bounds: `C` in `[0.1, 1000]`, `gamma` in
+`[0.001, 10]`, `epsilon` in `[0.01, 0.1]` (Zhu et al.,
+`benchmarks.py:getFunctionDetails`).
+
+**Four-way (stacking on subject-adv features):** pass
+`--meta-adv-checkpoint` — a second `metatrain` checkpoint whose
+`--init-checkpoint` was a `--subject-adv` run — to add a `meta_adv` method
+scored on the *same* support/query draws. This answers "does meta-adaptation
+on subject-invariant features beat meta-adaptation on plain features, and
+both beat SVR?":
+
+```bash
+python vit_gaze_segmenter.py metacompare ... \
+  --base-checkpoint  ./base_out/fold0_best_vit_gaze_segmenter.pth \
+  --meta-checkpoint  ./meta_out/fold0_meta_film_vit_gaze.pth \
+  --meta-adv-checkpoint ./meta_adv_out/fold0_meta_film_vit_gaze.pth \
+  --k 16 --trials 5 --fold-index 0 --csv-out metacompare.csv
+```
+
+The summary then also reports `meta_adv_gain`, `meta_adv_vs_svr`, and
+`meta_adv_vs_meta`.
+
+### Plotting the K-sweep curve
+
+After running `metacompare` at several `--k` values (all appending to the
+same `--csv-out`), render the error-vs-K figure:
+
+```bash
+python -m vit_gaze.plot_metacompare --csv metacompare.csv --out kcurve.png
+```
+
+It groups by K and plots mean ± std-across-folds for every method present
+(`base / svr / meta / meta_adv`), x-axis log-scaled in K. The publishable
+claim is meta reaching SVR's asymptotic accuracy at a **smaller K** (fewer
+calibration points), and `meta_adv` undercutting both.
+
+**Statistical significance markers** (`--sig-pair m1:m2`, repeatable). Each
+`(fold, seed)` row gives one paired observation, so a per-K **paired
+Wilcoxon signed-rank test** tests whether two methods' errors differ
+significantly across the combined fold-and-seed sample. Stars are drawn
+above the winning curve (`*` p<0.05, `**` p<0.01, `***` p<0.001) at each K
+where the test passes, and the full p-value table is printed to stdout:
+
+```bash
+python -m vit_gaze.plot_metacompare --csv metacompare.csv --out kcurve.png \
+  --sig-pair meta:svr --sig-pair meta:fc_ft --sig-pair meta_adv:meta
+```
+
+The `scripts/plot_metacompare.sh` wrapper runs those three tests by default
+(`SIG_PAIRS` env var). Wilcoxon requires `scipy`; if it's not installed the
+plot is rendered without stars and a notice is printed. The test needs at
+least 6 paired observations per K to run, so with a single seed it'll work
+once you have enough folds; with a `SEEDS` sweep it always has enough.
+
+### Per-fold / K-sweep tables (`pivot_metacompare`)
+
+The companion script renders the same CSV into the condensed tables that
+sit next to the K-sweep figure in a paper. Three views:
+
+```bash
+# Headline K-sweep table (rows=K, columns=method, cells="mean +/- std" over folds x seeds)
+python -m vit_gaze.pivot_metacompare --csv metacompare.csv \
+  --view summary --format markdown --out tables/summary.md
+
+# Per-fold breakdown at a fixed K (surfaces fold 2 as the hard one)
+python -m vit_gaze.pivot_metacompare --csv metacompare.csv \
+  --view per-fold --k 16 --format markdown --out tables/per_fold_K16.md
+
+# Transposed K-sweep: rows=method, columns=K -- easier to scan when comparing methods
+python -m vit_gaze.pivot_metacompare --csv metacompare.csv \
+  --view per-method --format latex --out tables/per_method.tex
+```
+
+Formats: `csv` (machine-readable), `markdown` (paste into a draft), `latex`
+(booktabs `tabular`). With a `SEEDS=...` sweep the cells aggregate over both
+folds and seeds automatically; with a single seed they aggregate over folds
+only.
+
+### One-button driver: `scripts/meta_pipeline.sbatch`
+
+For the full experiment, submit the driver as a 5-fold Slurm array — each
+array task runs all five stages sequentially for its fold (base train →
+subject-adv train → metatrain on base → metatrain on adv → metacompare
+K-sweep), writing to a shared `metacompare.csv`. Stages whose final
+checkpoint already exists are skipped, so re-submitting after a partial
+failure resumes cleanly.
+
+```bash
+# fill in your cluster's #SBATCH directives at the top of the script
+# (partition / account / time / GPU / cpus / mem)
+sbatch --array=0-4 scripts/meta_pipeline.sbatch
+
+# after the array finishes, render the K-sweep figure
+bash scripts/plot_metacompare.sh
+```
+
+Override knobs without editing the script via `--export`:
+
+```bash
+sbatch --array=0-4 --export=ALL,DATA_PATH=/scratch/me/ProcessedData,\
+EPOCHS=30,ADV_WEIGHT=0.05,K_SWEEP='8 16 32 64' \
+  scripts/meta_pipeline.sbatch
+```
+
+**Seed sweep** (the right way to get honest error bars): set `SEEDS` to a
+space-separated list. The driver loops the full per-fold pipeline once per
+seed, each seed gets its own checkpoint namespace
+(`$OUT_ROOT/<stage>/seed<N>/...`), and the shared `metacompare.csv` gains a
+`seed` column. The plotter aggregates over **(folds × seeds)** automatically,
+so error bands reflect run-to-run noise as well as fold-to-fold spread:
+
+```bash
+sbatch --array=0-4 --export=ALL,SEEDS='42 123 7' scripts/meta_pipeline.sbatch
+```
+
+Cost scales linearly with the number of seeds. Two seeds is enough to detect
+whether a per-fold delta is signal or noise (we observed up to ~1 cm
+per-fold drift on the MobileNetV3 baseline between two runs of the same
+code); three is what you'd report in a paper.
+
 ### Writing the log to a file
 
 By default the per-batch / per-epoch / accel log lines go to stdout. Pass

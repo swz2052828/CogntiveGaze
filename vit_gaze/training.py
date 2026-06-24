@@ -8,13 +8,19 @@ import torch.nn.functional as F
 import torch.utils.data as data
 
 from . import accel
-from .dataset import build_dataset, build_multistream_dataset
+from .dataset import (
+    AugmentedSubset,
+    build_dataset,
+    build_multistream_dataset_maybe_video,
+    make_augment_transform,
+)
 from .models import (
     batch_images_for_mode,
     batch_multistream_for_mode,
     create_model,
     forward_for_mode,
     forward_multistream,
+    vivit_kwargs_from_args,
 )
 from .splits import recording_kfolds, select_splits
 
@@ -60,8 +66,10 @@ def denormalize_gaze(gaze, mean, std):
     return gaze * std + mean
 
 
-def make_loader(dataset, indices, batch_size, shuffle, num_workers):
+def make_loader(dataset, indices, batch_size, shuffle, num_workers, augment_transform=None):
     subset = data.Subset(dataset, indices)
+    if augment_transform is not None:
+        subset = AugmentedSubset(subset, augment_transform)
     loader_kwargs = dict(
         batch_size=batch_size,
         shuffle=shuffle,
@@ -90,7 +98,7 @@ def _run_training(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     accel.configure_backends(enable_tf32=not getattr(args, "no_tf32", False))
     if args.input_mode == "multistream":
-        dataset = build_multistream_dataset(args)
+        dataset = build_multistream_dataset_maybe_video(args)
     else:
         use_synthetic = args.input_mode in ("synthetic", "paired")
         require_synthetic = (
@@ -105,6 +113,11 @@ def _run_training(args):
 
     log(f"Device: {device}")
     log(f"Cross validation: {args.folds} folds by recording id")
+    backbone_str = (f" backbone={args.backbone}"
+                    if args.input_mode == "multistream" and hasattr(args, "backbone")
+                    else "")
+    log(f"Model: input_mode={args.input_mode}{backbone_str} "
+        f"weights={args.weights} freeze_encoder={args.freeze_encoder}")
     if args.fold_index is not None:
         log(f"Running only fold {args.fold_index}")
 
@@ -151,6 +164,9 @@ def train_one_fold(args, dataset, split, device):
         use_grid=getattr(args, "use_grid", False),
         grid_size=getattr(args, "grid_size", 25),
         backbone=getattr(args, "backbone", "vit"),
+        output_activation=getattr(args, "output_activation", "none"),
+        gaze_range=getattr(args, "gaze_range", 4.0),
+        **vivit_kwargs_from_args(args),
     ).to(device)
     if getattr(args, "compile", False):
         model = _maybe_compile(model)
@@ -164,8 +180,48 @@ def train_one_fold(args, dataset, split, device):
     scaler = accel.make_grad_scaler(amp_enabled, amp_dtype)
     log(f"Fold {fold} accel {accel.describe(device, amp_enabled, amp_dtype)}")
 
-    train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers)
+    # Loss-scale: a fixed multiplier on the regression loss (≈ lr * scale for
+    # that backbone). Zhu et al. train AFFNet with loss * 4; we default to 4 for
+    # affnet and 1 otherwise unless --loss-scale overrides it. The *reported*
+    # train loss is left unscaled so it stays comparable across backbones.
+    loss_scale = getattr(args, "loss_scale", None)
+    if loss_scale is None:
+        loss_scale = 4.0 if getattr(args, "backbone", "vit") == "affnet" else 1.0
+    loss_scale = float(loss_scale)
+    if loss_scale != 1.0:
+        log(f"Fold {fold} loss_scale={loss_scale}")
+    scheduler = _make_scheduler(optimizer, args)
+    if scheduler is not None:
+        log(f"Fold {fold} lr_scheduler={getattr(args, 'lr_scheduler', 'none')}")
+
+    augment = getattr(args, "augment", "none")
+    aug_transform = None
+    if args.input_mode == "multistream" and augment and augment != "none":
+        aug_transform = make_augment_transform(augment, args.image_size)
+        log(f"Fold {fold} augment={augment}")
+
+    train_loader = make_loader(dataset, train_indices, args.batch_size, True, args.num_workers,
+                               augment_transform=aug_transform)
     val_loader = make_loader(dataset, val_indices, args.batch_size, False, args.num_workers)
+
+    # Domain-adversarial subject invariance (DANN). Built after the optimizer
+    # and loader so it can size the lambda schedule to the fold's step count and
+    # append the discriminator's params to the existing optimizer.
+    adv = None
+    if getattr(args, "subject_adv", False):
+        if args.input_mode != "multistream":
+            raise ValueError("--subject-adv requires --input-mode multistream")
+        from .multistream_backbones.subject_adv import SubjectAdversary
+        total_steps = max(1, args.epochs * len(train_loader))
+        adv = SubjectAdversary(
+            model, split["train_recordings"], device, optimizer,
+            max_lambda=args.adv_weight,
+            warmup_frac=getattr(args, "adv_warmup_frac", 1.0),
+            total_steps=total_steps,
+        )
+        log(f"Fold {fold} subject_adv on subjects={adv.num_subjects} "
+            f"adv_weight={args.adv_weight} "
+            f"warmup_frac={getattr(args, 'adv_warmup_frac', 1.0)}")
 
     gaze_mean_device = gaze_mean.to(device)
     gaze_std_device = gaze_std.to(device)
@@ -173,6 +229,16 @@ def train_one_fold(args, dataset, split, device):
     best_val_error = float("inf")
     out_path = Path(args.out_path)
     out_path.mkdir(parents=True, exist_ok=True)
+
+    # Early-stopping bookkeeping. patience=None disables it; the monitored
+    # metric also drives "best" checkpoint selection so the two are consistent.
+    # min_delta sets the minimum improvement that counts as progress.
+    patience = getattr(args, "patience", None)
+    monitor = getattr(args, "early_stop_metric", "val_error")
+    min_delta = float(getattr(args, "min_delta", 0.0))
+    if monitor not in ("val_loss", "val_error"):
+        raise ValueError(f"--early-stop-metric must be val_loss or val_error, got {monitor}")
+    epochs_since_improve = 0
 
     for epoch in range(args.epochs):
         epoch_start = time.perf_counter()
@@ -190,6 +256,8 @@ def train_one_fold(args, dataset, split, device):
             scaler=scaler,
             amp_enabled=amp_enabled,
             amp_dtype=amp_dtype,
+            adv=adv,
+            loss_scale=loss_scale,
         )
         val_loss, val_error = evaluate(
             model=model,
@@ -202,13 +270,17 @@ def train_one_fold(args, dataset, split, device):
             amp_dtype=amp_dtype,
         )
         epoch_time = time.perf_counter() - epoch_start
+        current_lr = optimizer.param_groups[0]["lr"]
         log(
             f"Fold {fold} epoch {epoch + 1}/{args.epochs} validation "
             f"val_loss={val_loss:.6f} "
             f"val_coord_error={val_error:.6f} "
             f"train_loss_mean={train_loss:.6f} "
+            f"lr={current_lr:.2e} "
             f"epoch_time_sec={epoch_time:.2f}"
         )
+        if scheduler is not None:
+            scheduler.step()
 
         checkpoint = {
             "model": _unwrap(model).state_dict(),
@@ -224,10 +296,26 @@ def train_one_fold(args, dataset, split, device):
             "val_error": val_error,
         }
         torch.save(checkpoint, out_path / f"fold{fold}_last_{args.backbone}_gaze_segmenter.pth")
-        if val_loss < best_val_loss:
+
+        current = val_loss if monitor == "val_loss" else val_error
+        best_so_far = best_val_loss if monitor == "val_loss" else best_val_error
+        if current < best_so_far - min_delta:
             best_val_loss = val_loss
             best_val_error = val_error
+            epochs_since_improve = 0
             torch.save(checkpoint, out_path / f"fold{fold}_best_{args.backbone}_gaze_segmenter.pth")
+        else:
+            epochs_since_improve += 1
+            if patience is not None and epochs_since_improve >= patience:
+                log(
+                    f"Fold {fold} early stop at epoch {epoch + 1}/{args.epochs}: "
+                    f"{monitor} did not improve by >= {min_delta} for "
+                    f"{patience} epochs (best {monitor}={best_so_far:.6f})"
+                )
+                break
+
+    if adv is not None:
+        adv.remove()
 
     fold_time = time.perf_counter() - fold_start
     log(
@@ -258,6 +346,8 @@ def train_epoch(
     scaler=None,
     amp_enabled=False,
     amp_dtype=None,
+    adv=None,
+    loss_scale=1.0,
 ):
     model.train()
     total_loss = 0.0
@@ -266,10 +356,25 @@ def train_epoch(
     for batch_idx, batch in enumerate(loader, start=1):
         batch_start = time.perf_counter()
         optimizer.zero_grad(set_to_none=True)
+        adv_loss_val = None
+        cur_lambda = None
         with accel.autocast(device, amp_enabled, amp_dtype):
-            pred, batch_size = _predict(model, batch, input_mode, device)
+            if adv is not None:
+                inputs = batch_multistream_for_mode(batch, device)
+                pred = adv.predict(model, inputs)
+                batch_size = inputs["face"].size(0)
+            else:
+                pred, batch_size = _predict(model, batch, input_mode, device)
             target = normalize_gaze(batch["gaze"].to(device), gaze_mean, gaze_std)
-            loss = F.smooth_l1_loss(pred, target)
+            reg_loss = F.smooth_l1_loss(pred, target)
+            # Scale the loss used for backprop (≈ lr * scale); keep reg_loss
+            # itself for reporting so logged train loss is comparable across
+            # backbones regardless of the scale.
+            loss = reg_loss * loss_scale
+            if adv is not None:
+                adv_loss, cur_lambda = adv.loss(batch["rec"])
+                loss = loss + adv_loss
+                adv_loss_val = adv_loss.item()
 
         if scaler is not None:
             scaler.scale(loss).backward()
@@ -278,16 +383,24 @@ def train_epoch(
         else:
             loss.backward()
             optimizer.step()
+        if adv is not None:
+            adv.advance()
 
-        total_loss += loss.item() * batch_size
+        # Report the regression loss (the comparable quantity across runs); the
+        # adversarial term is logged separately when active.
+        total_loss += reg_loss.item() * batch_size
         total_count += batch_size
         running_loss = total_loss / max(1, total_count)
         batch_time = time.perf_counter() - batch_start
         if (batch_idx % print_freq) == 0:
+            adv_str = ""
+            if adv_loss_val is not None:
+                adv_str = f"adv_loss={adv_loss_val:.6f} adv_lambda={cur_lambda:.4f} "
             log(
                 f"Fold {fold} epoch {epoch + 1}/{total_epochs} "
                 f"batch {batch_idx}/{total_batches} "
-                f"batch_loss={loss.item():.6f} "
+                f"batch_loss={reg_loss.item():.6f} "
+                f"{adv_str}"
                 f"running_train_loss={running_loss:.6f} "
                 f"batch_time_sec={batch_time:.2f}"
             )
@@ -367,6 +480,23 @@ def _maybe_compile(model):
         return model
 
 
+def _make_scheduler(optimizer, args):
+    name = getattr(args, "lr_scheduler", "none")
+    if not name or name == "none":
+        return None
+    if name == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=0.0
+        )
+    if name == "step":
+        return torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=getattr(args, "step_size", 3),
+            gamma=getattr(args, "step_gamma", 0.5),
+        )
+    raise ValueError(f"Unknown --lr-scheduler: {name!r}")
+
+
 def _predict(model, batch, input_mode, device):
     """Dispatch a batch through the right forward path; return (pred, batch_size)."""
     if input_mode == "multistream":
@@ -389,6 +519,9 @@ def load_checkpoint(checkpoint_path, device):
         use_grid=bool(saved_args.get("use_grid", False)),
         grid_size=int(saved_args.get("grid_size", 25)),
         backbone=str(saved_args.get("backbone", "vit")),
+        output_activation=str(saved_args.get("output_activation", "none")),
+        gaze_range=float(saved_args.get("gaze_range", 4.0)),
+        **vivit_kwargs_from_args(saved_args),
     ).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()

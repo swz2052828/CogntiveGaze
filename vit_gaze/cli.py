@@ -1,7 +1,11 @@
 import argparse
 
 from .explain import explain
+from .meta import meta_train
+from .metacompare import metacompare
+from .svr_search import svrsearch
 from .training import train
+from .visualize_gaze import add_visualize_args, visualize
 
 
 def add_common_args(parser):
@@ -74,6 +78,49 @@ def add_common_args(parser):
     )
 
 
+def _gamma_arg(s):
+    """argparse type for SVR gamma: accept 'scale' / 'auto' or a float."""
+    if s in ("scale", "auto"):
+        return s
+    return float(s)
+
+
+def _add_vivit_args(parser):
+    """Vivit-only knobs: temporal window + temporal transformer shape + spatial
+    backbone selection. Ignored for other backbones."""
+    parser.add_argument(
+        "--temporal-window", type=int, default=8,
+        help="ViViT only. T = number of consecutive frames per sample. The "
+             "dataset is wrapped to produce (T, C, H, W) windows from each "
+             "recording (label = last frame's gaze). T-fold I/O + compute "
+             "per sample relative to the per-frame backbones, so use a "
+             "smaller --batch-size. Default 8 (~0.27 s at 30 FPS).",
+    )
+    parser.add_argument(
+        "--temporal-stride", type=int, default=1,
+        help="ViViT only. Stride between consecutive windows in a recording. "
+             "stride=1 (default) generates dense overlapping windows (T-1 "
+             "frames of overlap, most training data); stride=T generates "
+             "non-overlapping windows (T-fold fewer training samples).",
+    )
+    parser.add_argument(
+        "--vivit-spatial",
+        choices=("vit", "foveal_vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        default="vit",
+        help="ViViT only. Spatial backbone whose forward_features is run "
+             "per-frame before the temporal transformer. The vit / foveal_vit "
+             "options have ImageNet pretrain; CNN options require --use-grid.",
+    )
+    parser.add_argument(
+        "--vivit-temporal-layers", type=int, default=4,
+        help="ViViT only. Number of temporal transformer encoder layers.",
+    )
+    parser.add_argument(
+        "--vivit-temporal-heads", type=int, default=8,
+        help="ViViT only. Number of attention heads in the temporal transformer.",
+    )
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -96,24 +143,111 @@ def build_parser():
             "right eye (+ optional face-grid) and selects a backbone via --backbone."
         ),
     )
+    _add_vivit_args(train_parser)
     train_parser.add_argument(
         "--backbone",
-        choices=("vit", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help=(
-            "Multistream backbone. vit (default) = shared ViT-B/16 with optional "
-            "grid. itracker / mobilenet_v3 / affnet / mgazenet are CNN baselines "
-            "ported from the project's reference implementations; all four "
+            "Multistream backbone. vit (default) = shared ViT-B/16 run three "
+            "times in parallel over face/L-eye/R-eye, features concatenated. "
+            "foveal_vit = single ViT-B/16 over a concatenated token sequence "
+            "with cross-region attention; face at low res (112x112), eyes at "
+            "high res (224x224), region-type embeddings. itracker / "
+            "mobilenet_v3 / affnet / mgazenet are CNN baselines; all four "
             "require --use-grid (architectures use or condition on the face-grid)."
         ),
     )
     train_parser.add_argument("--weights", choices=("none", "imagenet"), default="none")
     train_parser.add_argument("--freeze-encoder", action="store_true")
+    train_parser.add_argument(
+        "--output-activation",
+        choices=("none", "scaled_tanh", "scaled_sin"),
+        default="none",
+        help="Activation on the final (x,y) gaze prediction. 'none' (default) "
+             "is a plain linear readout. 'scaled_sin'/'scaled_tanh' map the "
+             "output through gaze_range*sin / gaze_range*tanh -- bounded to "
+             "+/-gaze_range in z-scored target space. NB: a base-model transform "
+             "(applied in forward()); the meta/SVR calibration paths bypass it.",
+    )
+    train_parser.add_argument(
+        "--gaze-range", type=float, default=4.0,
+        help="Scale for --output-activation (in z-scored std units; ~max |z| in "
+             "the data). Ignored when --output-activation none.",
+    )
     train_parser.add_argument("--epochs", type=int, default=10)
     train_parser.add_argument("--batch-size", type=int, default=8)
     train_parser.add_argument("--num-workers", type=int, default=4)
     train_parser.add_argument("--lr", type=float, default=1e-4)
     train_parser.add_argument("--weight-decay", type=float, default=1e-4)
+    train_parser.add_argument(
+        "--loss-scale", type=float, default=None,
+        help="Fixed multiplier on the regression loss (acts like lr*scale for "
+             "this backbone). Default: 4.0 for --backbone affnet (matching Zhu "
+             "et al.'s `loss_op(gaze, label) * 4`), 1.0 otherwise. The reported "
+             "train loss is left unscaled so it stays comparable across backbones.",
+    )
+    train_parser.add_argument(
+        "--lr-scheduler",
+        choices=("none", "cosine", "step"),
+        default="none",
+        help=(
+            "LR schedule applied within each fold. "
+            "'cosine' = CosineAnnealingLR(T_max=epochs, eta_min=0); "
+            "'step' = StepLR(step_size=--step-size, gamma=--step-gamma). "
+            "Default 'none' keeps constant LR."
+        ),
+    )
+    train_parser.add_argument(
+        "--step-size",
+        type=int,
+        default=3,
+        help="Epoch interval between LR drops for --lr-scheduler step. Default 3.",
+    )
+    train_parser.add_argument(
+        "--step-gamma",
+        type=float,
+        default=0.5,
+        help="Multiplicative LR decay per step for --lr-scheduler step. Default 0.5.",
+    )
+    train_parser.add_argument(
+        "--augment",
+        choices=("none", "light", "medium"),
+        default="none",
+        help=(
+            "Data augmentation applied to multistream crops (face + eyes) during training only. "
+            "light: ColorJitter(0.2/0.2/0.2) + RandomResizedCrop(scale=0.90-1.0). "
+            "medium: ColorJitter(0.4/0.4/0.4) + RandomResizedCrop(scale=0.85-1.0) + RandomGrayscale(p=0.05). "
+            "No horizontal flip: gaze labels are screen-relative. Off by default."
+        ),
+    )
+    train_parser.add_argument(
+        "--subject-adv",
+        action="store_true",
+        help=(
+            "Domain-adversarial subject invariance (DANN). Multistream only. "
+            "Attaches a subject-ID classifier to the fused feature through a "
+            "gradient-reversal layer so the encoder learns subject-invariant "
+            "gaze features (regularizes the small cohort; composes with, does "
+            "not replace, per-subject calibration). Training-only; the "
+            "inference checkpoint is unchanged. Off by default."
+        ),
+    )
+    train_parser.add_argument(
+        "--adv-weight",
+        type=float,
+        default=0.1,
+        help="Ceiling for the gradient-reversal strength lambda, which ramps "
+             "0 -> this over training (Ganin schedule). Default 0.1.",
+    )
+    train_parser.add_argument(
+        "--adv-warmup-frac",
+        type=float,
+        default=1.0,
+        help="Fraction of total training steps over which lambda ramps to "
+             "--adv-weight. 1.0 (default) ramps across the whole run; smaller "
+             "values reach full strength sooner.",
+    )
     train_parser.add_argument(
         "--compile",
         action="store_true",
@@ -128,6 +262,30 @@ def build_parser():
         help="Run only one 0-based fold. Useful with Slurm array jobs.",
     )
     train_parser.add_argument(
+        "--patience",
+        type=int,
+        default=None,
+        help="Early-stop training within a fold if the monitored validation "
+             "metric does not improve for this many epochs. Off by default. "
+             "The best checkpoint is still saved.",
+    )
+    train_parser.add_argument(
+        "--min-delta",
+        type=float,
+        default=0.0,
+        help="Minimum improvement in the monitored metric to count as progress "
+             "(0 = strict improvement, the default). Useful with --patience to "
+             "ignore noisy single-epoch dips. Also gates best-checkpoint saving.",
+    )
+    train_parser.add_argument(
+        "--early-stop-metric",
+        choices=("val_loss", "val_error"),
+        default="val_error",
+        help="Which validation metric drives --patience and best-checkpoint "
+             "selection. Defaults to val_error (val_coord_error), the metric "
+             "actually reported; pass val_loss to keep the prior behaviour.",
+    )
+    train_parser.add_argument(
         "--log-file",
         default=None,
         help="Also append every training/optimization log line to this file "
@@ -137,6 +295,216 @@ def build_parser():
              "per-fold log, e.g. --log-file train_fold${SLURM_ARRAY_TASK_ID}.log.",
     )
     train_parser.add_argument("--seed", type=int, default=42)
+
+    meta_parser = subparsers.add_parser(
+        "metatrain",
+        help="Meta-learn a per-subject calibration adapter (FiLM/LoRA) with "
+             "FOMAML/ANIL. Multistream + a backbone exposing forward_features "
+             "(vit). Reports pre- vs post-adaptation coord error on held-out "
+             "recordings -- the comparison point against per-subject SVR.",
+    )
+    add_common_args(meta_parser)
+    meta_parser.add_argument("--out-path", default="./vit_gaze_meta_output")
+    meta_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    _add_vivit_args(meta_parser)
+    meta_parser.add_argument(
+        "--backbone",
+        choices=("vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        default="vit",
+        help="All multistream backbones expose forward_features and are "
+             "supported. The CNN baselines (itracker/mobilenet_v3/affnet/"
+             "mgazenet) require --use-grid. foveal_vit emits a 768-d feature "
+             "(vs 2304-d for the three-stream vit), which makes the FiLM/LoRA "
+             "adapters 3x smaller. Use --init-checkpoint to start from a "
+             "trained encoder (the frozen encoder is otherwise un-tuned).",
+    )
+    meta_parser.add_argument("--weights", choices=("none", "imagenet"), default="imagenet")
+    meta_parser.add_argument("--freeze-encoder", action="store_true")
+    meta_parser.add_argument(
+        "--init-checkpoint", default=None,
+        help="Load encoder+head from a prior `train` checkpoint so meta-learning "
+             "starts from gaze-tuned features (strongly recommended; otherwise "
+             "the frozen encoder is only ImageNet/random).",
+    )
+    meta_parser.add_argument(
+        "--adapter", choices=("film", "lora"), default="film",
+        help="Per-subject adapter meta-learned for calibration. film: (gamma,beta) "
+             "scale+shift on the fused feature (tiny, robust at small K). lora: "
+             "low-rank residual (more expressive, higher overfit risk at small K).",
+    )
+    meta_parser.add_argument("--lora-rank", type=int, default=8)
+    meta_parser.add_argument("--lora-alpha", type=float, default=8.0)
+    meta_parser.add_argument(
+        "--meta-support", type=int, default=16,
+        help="K: calibration frames per subject used to adapt (support set).",
+    )
+    meta_parser.add_argument(
+        "--meta-query", type=int, default=32,
+        help="Query frames per task per outer step (the post-adaptation loss).",
+    )
+    meta_parser.add_argument(
+        "--inner-steps", type=int, default=20,
+        help="Inner-loop SGD steps used to adapt the FiLM/LoRA fast-weights "
+             "from the meta-learned init on each task's support set. The empirical "
+             "sweet spot for FiLM at fused_dim~=2300 is ~20 (smoke runs at 5 left "
+             "the adapter essentially unmoved; the K-knob did nothing).",
+    )
+    meta_parser.add_argument(
+        "--inner-lr", type=float, default=1.0,
+        help="Inner-loop SGD learning rate. With FiLM (gamma init=1, beta init=0) "
+             "the adapter needs an aggressive lr to actually move within --inner-steps; "
+             "1.0 worked in smoke (1e-2 was too conservative -- the adapter returned "
+             "the base prediction regardless of K).",
+    )
+    meta_parser.add_argument("--outer-lr", type=float, default=1e-3)
+    meta_parser.add_argument(
+        "--adapt-steps", type=int, default=None,
+        help="Inner steps used at enrollment/eval (defaults to --inner-steps).",
+    )
+    meta_parser.add_argument("--meta-iters", type=int, default=2000)
+    meta_parser.add_argument("--tasks-per-batch", type=int, default=4)
+    meta_parser.add_argument("--print-freq", type=int, default=100)
+    meta_parser.add_argument("--batch-size", type=int, default=64)
+    meta_parser.add_argument("--num-workers", type=int, default=4)
+    meta_parser.add_argument("--folds", type=int, default=5)
+    meta_parser.add_argument("--fold-index", type=int, default=None)
+    meta_parser.add_argument("--seed", type=int, default=42)
+    meta_parser.add_argument("--log-file", default=None)
+
+    cmp_parser = subparsers.add_parser(
+        "metacompare",
+        help="Apples-to-apples per-subject calibration comparison at matched K: "
+             "base / per-subject SVR / meta-learned adapter, scored on the same "
+             "support/query draws.",
+    )
+    add_common_args(cmp_parser)
+    cmp_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    cmp_parser.add_argument(
+        "--backbone", default=None,
+        help="Accepted for symmetry with train / metatrain (so the same sbatch "
+             "driver can pass it to every subcommand). Ignored: the actual "
+             "backbone is read from each loaded checkpoint, which is the "
+             "authoritative source.",
+    )
+    cmp_parser.add_argument("--base-checkpoint", required=True,
+                            help="Trained `train` checkpoint (encoder+head).")
+    cmp_parser.add_argument("--meta-checkpoint", required=True,
+                            help="Trained `metatrain` checkpoint (encoder+head+adapter init).")
+    cmp_parser.add_argument(
+        "--meta-adv-checkpoint", default=None,
+        help="Optional second `metatrain` checkpoint built on subject-adversarial "
+             "features (i.e. metatrain --init-checkpoint <a --subject-adv run>). "
+             "When given, a 4th method 'meta_adv' is scored on the same draws, "
+             "yielding the four-way base / svr / meta / meta_adv comparison.")
+    cmp_parser.add_argument("--k", type=int, default=16,
+                            help="Calibration frames per subject (matched across the three methods).")
+    cmp_parser.add_argument("--trials", type=int, default=5,
+                            help="Random support/query draws per recording; results are averaged.")
+    cmp_parser.add_argument(
+        "--inner-steps", type=int, default=20,
+        help="Inner-loop SGD steps used when adapting the meta adapter on K "
+             "support frames. Should match the value used at metatrain time "
+             "(both default to 20 -- see metatrain --inner-steps for the rationale).",
+    )
+    cmp_parser.add_argument(
+        "--inner-lr", type=float, default=1.0,
+        help="Inner-loop SGD lr; should match metatrain --inner-lr (both 1.0).",
+    )
+    cmp_parser.add_argument("--svr-C", type=float, default=1.0)
+    cmp_parser.add_argument("--svr-eps", type=float, default=0.1)
+    cmp_parser.add_argument("--svr-gamma", type=_gamma_arg, default="scale")
+    cmp_parser.add_argument(
+        "--svr-embed", action="store_true",
+        help="Enable the SVR-on-embeddings baseline (Zhu et al.'s actual "
+             "calibration recipe): per subject, fit two RBF-SVRs from the K "
+             "support fused features to (x, y), predict on the query features. "
+             "Replaces the readout entirely with a per-subject SVR.",
+    )
+    cmp_parser.add_argument("--svr-embed-C", type=float, default=1.0)
+    cmp_parser.add_argument("--svr-embed-eps", type=float, default=0.1)
+    cmp_parser.add_argument("--svr-embed-gamma", type=_gamma_arg, default="scale")
+    cmp_parser.add_argument(
+        "--fc-ft", action="store_true",
+        help="Enable the head-only fine-tune baseline (Zhu et al. style): per "
+             "subject, clone the base model's readout, Adam-train it on the K "
+             "support frames for --fc-ft-steps, predict on the query frames. "
+             "Adds a 'fc_ft' method to the comparison.",
+    )
+    cmp_parser.add_argument("--fc-ft-steps", type=int, default=20,
+                            help="Full-batch Adam steps for fc_ft (default 20, matches Zhu et al.).")
+    cmp_parser.add_argument("--fc-ft-lr", type=float, default=5e-5,
+                            help="Adam lr for fc_ft (default 5e-5, matches Zhu et al.).")
+    cmp_parser.add_argument("--fc-ft-weight-decay", type=float, default=5e-4,
+                            help="Adam weight_decay for fc_ft (default 5e-4, matches Zhu et al.).")
+    cmp_parser.add_argument("--batch-size", type=int, default=64)
+    cmp_parser.add_argument("--num-workers", type=int, default=4)
+    cmp_parser.add_argument("--folds", type=int, default=5)
+    cmp_parser.add_argument("--fold-index", type=int, default=None)
+    cmp_parser.add_argument("--seed", type=int, default=42)
+    cmp_parser.add_argument("--log-file", default=None)
+    cmp_parser.add_argument("--csv-out", default=None,
+                            help="Append per-fold rows to this CSV for plotting.")
+
+    svr_parser = subparsers.add_parser(
+        "svrsearch",
+        help="Swarm-style global hyperparameter search for the per-subject SVR "
+             "baseline (inspired by Zhu et al., SwarmIntelligentCalibration). "
+             "Tunes one (C, gamma, epsilon) triple per fold by minimizing mean "
+             "Euclidean error across training-fold subjects; paste the result "
+             "into metacompare via --svr-C/--svr-gamma/--svr-eps.",
+    )
+    add_common_args(svr_parser)
+    svr_parser.add_argument("--input-mode", choices=("multistream",), default="multistream")
+    svr_parser.add_argument(
+        "--backbone", default=None,
+        help="Accepted for symmetry with train / metatrain. Ignored: the "
+             "backbone is read from --base-checkpoint, which is authoritative.",
+    )
+    svr_parser.add_argument("--base-checkpoint", required=True)
+    svr_parser.add_argument(
+        "--space", choices=("prediction", "embedding"), default="prediction",
+        help="Which SVR baseline to tune. prediction (default) tunes our "
+             "correction-style SVR ((pred_xy)->(true_xy)); embedding tunes the "
+             "Zhu et al.-style SVR ((fused_feature)->coord), which replaces the "
+             "readout. Use embedding for --svr-embed in metacompare.",
+    )
+    svr_parser.add_argument("--k", type=int, default=16,
+                            help="Calibration frames per subject during HP search.")
+    svr_parser.add_argument("--trials", type=int, default=3,
+                            help="Random support/query draws per subject per fitness eval.")
+    svr_parser.add_argument(
+        "--optimizer", choices=("pso", "mvo", "jaya"), default="pso",
+        help="Swarm optimizer for the HP search. pso (default) = Particle Swarm; "
+             "mvo = Multi-Verse Optimizer; jaya = JAYA (parameter-less). All "
+             "three are the algorithms Zhu et al. report in "
+             "SwarmIntelligentCalibration; results are written with the chosen "
+             "optimizer recorded in the JSON.",
+    )
+    svr_parser.add_argument("--pop", type=int, default=30,
+                            help="Population/universe size (pso/mvo/jaya).")
+    svr_parser.add_argument("--iters", type=int, default=50, help="Outer iterations.")
+    svr_parser.add_argument("--batch-size", type=int, default=64)
+    svr_parser.add_argument("--num-workers", type=int, default=4)
+    svr_parser.add_argument("--folds", type=int, default=5)
+    svr_parser.add_argument("--fold-index", type=int, default=None)
+    svr_parser.add_argument("--seed", type=int, default=42)
+    svr_parser.add_argument("--log-file", default=None)
+    svr_parser.add_argument("--json-out", default=None,
+                            help="Write the tuned per-fold hyperparameters to this JSON file.")
+
+    viz_parser = subparsers.add_parser(
+        "visualize",
+        help="Animate a recording's gaze trace (ground truth + base / SVR / "
+             "meta-calibrated predictions) as a GIF. The first --enroll-k "
+             "frames are time-ordered and shaded as the calibration phase, so "
+             "the before/after-calibration effect is visible.",
+    )
+    add_common_args(viz_parser)
+    viz_parser.add_argument(
+        "--input-mode", choices=("multistream",), default="multistream",
+        help="The visualize tool is multistream-only.",
+    )
+    add_visualize_args(viz_parser)
 
     explain_parser = subparsers.add_parser("explain")
     add_common_args(explain_parser)
@@ -179,6 +547,14 @@ def main():
     args = build_parser().parse_args()
     if args.command == "train":
         train(args)
+    elif args.command == "metatrain":
+        meta_train(args)
+    elif args.command == "metacompare":
+        metacompare(args)
+    elif args.command == "visualize":
+        visualize(args)
+    elif args.command == "svrsearch":
+        svrsearch(args)
     elif args.command == "explain":
         explain(args)
     else:

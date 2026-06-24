@@ -87,85 +87,28 @@ class SingleFaceViTGaze(nn.Module):
 # continue to work.
 from .multistream_backbones import (  # noqa: E402,F401
     MultiStreamViTGaze,
+    attach_output_activation,
     build_multistream_backbone,
 )
-class MultiStreamViTGaze(nn.Module):
-    """Shared ViT-B/16 encoder over face + left eye + right eye, optional grid.
 
-    Architecturally mirrors the iTracker-family CNNs the project's CNN baselines
-    use (FaceImageModel + EyeImageModel x2 + grid MLP, fused at the head), but
-    the convolutional backbones are replaced by a single shared ViT-B/16. Eye
-    crops are assumed to be the same 224x224 as the face crop, so the same
-    encoder applies to all three streams without resizing. ImageNet weight
-    sharing is the main lever against overfitting at small subject counts.
+
+def vivit_kwargs_from_args(args):
+    """Extract vivit-specific kwargs from an argparse namespace (or a dict-like).
+
+    All values fall back to safe defaults that are ignored for non-vivit
+    backbones, so this can be passed unconditionally to ``create_model``.
     """
-
-    def __init__(
-        self,
-        weights="none",
-        freeze_encoder=False,
-        use_grid=False,
-        grid_size=25,
-    ):
-        super().__init__()
-        from torchvision.models import ViT_B_16_Weights, vit_b_16
-
-        if weights == "imagenet":
-            vit_weights = ViT_B_16_Weights.IMAGENET1K_V1
-        elif weights == "none":
-            vit_weights = None
-        else:
-            raise ValueError("--weights must be 'none' or 'imagenet'")
-
-        self.encoder = vit_b_16(weights=vit_weights)
-        hidden_dim = self.encoder.heads.head.in_features
-        self.encoder.heads = nn.Identity()
-
-        if freeze_encoder:
-            for param in self.encoder.parameters():
-                param.requires_grad = False
-
-        self.use_grid = use_grid
-        grid_feat_dim = 0
-        if use_grid:
-            self.grid_mlp = nn.Sequential(
-                nn.Linear(grid_size * grid_size, 256),
-                nn.GELU(),
-                nn.Linear(256, 128),
-                nn.GELU(),
-            )
-            grid_feat_dim = 128
-
-        fused_dim = hidden_dim * 3 + grid_feat_dim
-        self.head = nn.Sequential(
-            nn.LayerNorm(fused_dim),
-            nn.Linear(fused_dim, 512),
-            nn.GELU(),
-            nn.Dropout(0.2),
-            nn.Linear(512, 128),
-            nn.GELU(),
-            nn.Linear(128, 2),
-        )
-
-    def forward(self, face, eye_left, eye_right, grid=None):
-        # Run the shared encoder once over the stacked streams instead of three
-        # sequential calls. ViT-B/16 has no cross-sample ops (attention is
-        # within one image; LayerNorm is per-sample; no BatchNorm) and no active
-        # dropout here, so this is bit-identical while far better utilizing the
-        # GPU. Falls back to per-stream calls if shapes ever differ.
-        if face.shape == eye_left.shape == eye_right.shape:
-            out = self.encoder(torch.cat([face, eye_left, eye_right], dim=0))
-            face_feat, eye_l_feat, eye_r_feat = out.chunk(3, dim=0)
-        else:
-            face_feat = self.encoder(face)
-            eye_l_feat = self.encoder(eye_left)
-            eye_r_feat = self.encoder(eye_right)
-        feats = [face_feat, eye_l_feat, eye_r_feat]
-        if self.use_grid:
-            if grid is None:
-                raise ValueError("Grid input expected but not provided.")
-            feats.append(self.grid_mlp(grid))
-        return self.head(torch.cat(feats, dim=1))
+    if hasattr(args, "get"):
+        get = args.get
+    else:
+        def get(name, default=None):
+            return getattr(args, name, default)
+    return dict(
+        vivit_spatial=get("vivit_spatial", "vit"),
+        vivit_temporal_window=int(get("temporal_window", 8)),
+        vivit_temporal_layers=int(get("vivit_temporal_layers", 4)),
+        vivit_temporal_heads=int(get("vivit_temporal_heads", 8)),
+    )
 
 
 def create_model(
@@ -175,18 +118,32 @@ def create_model(
     use_grid=False,
     grid_size=25,
     backbone="vit",
+    # optional output activation on the final (B, 2) gaze prediction
+    output_activation="none",
+    gaze_range=4.0,
+    # vivit-specific (ignored for other backbones)
+    vivit_spatial="vit",
+    vivit_temporal_window=8,
+    vivit_temporal_layers=4,
+    vivit_temporal_heads=8,
 ):
     if input_mode == "paired":
-        return PairedFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
-    if input_mode == "multistream":
-        return build_multistream_backbone(
+        model = PairedFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
+    elif input_mode == "multistream":
+        model = build_multistream_backbone(
             backbone=backbone,
             weights=weights,
             freeze_encoder=freeze_encoder,
             use_grid=use_grid,
             grid_size=grid_size,
+            vivit_spatial=vivit_spatial,
+            vivit_temporal_window=vivit_temporal_window,
+            vivit_temporal_layers=vivit_temporal_layers,
+            vivit_temporal_heads=vivit_temporal_heads,
         )
-    return SingleFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
+    else:
+        model = SingleFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
+    return attach_output_activation(model, output_activation, gaze_range)
 
 
 def batch_images_for_mode(batch, input_mode, device):

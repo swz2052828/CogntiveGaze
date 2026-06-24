@@ -11,5 +11,5 @@ so that importing the package does not pull in heavy optional dependencies
 """
 
 __all__ = [
-    "config", "geometry", "metrics", "preprocess", "events", "io",
+    "config", "geometry", "metrics", "preprocess", "events", "io", "export",
 ]
