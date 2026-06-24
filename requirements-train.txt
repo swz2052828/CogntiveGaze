@@ -1,0 +1,18 @@
+# Core training dependencies for the ViT gaze model.
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.21.0
+scipy>=1.7.0
+opencv-python>=4.5.0
+scikit-learn>=1.0.0
+pillow>=8.0.0
+tqdm>=4.60.0
+
+# Distributed training and mixed precision (Accelerate handles device/dtype automatically)
+accelerate>=0.20.0
+
+# Optional: for integration with weights&biases logging (can be omitted)
+# wandb>=0.13.0
+
+# Optional: for tensorboard integration (recommended for local training logging)
+tensorboard>=2.10.0

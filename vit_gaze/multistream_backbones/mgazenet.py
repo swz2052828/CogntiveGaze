@@ -172,7 +172,7 @@ class MGazeNetMultistream(MultistreamBackboneBase):
             nn.Linear(128, 2),
         )
 
-    def forward(self, face, eye_left, eye_right, grid=None):
+    def forward_features(self, face, eye_left, eye_right, grid=None):
         if grid is None:
             raise ValueError("MGazeNetMultistream requires --use-grid.")
         out_face = self.face_branch(face)
@@ -188,4 +188,7 @@ class MGazeNetMultistream(MultistreamBackboneBase):
         out_eyes = out_eyes.view(out_eyes.size(0), -1)
         out_eyes = self.eye_fc(out_eyes)
 
-        return self.fc(torch.cat([out_eyes, out_face, out_rect], dim=1))
+        return torch.cat([out_eyes, out_face, out_rect], dim=1)
+
+    def forward(self, face, eye_left, eye_right, grid=None):
+        return self.fc(self.forward_features(face, eye_left, eye_right, grid))
