@@ -375,7 +375,23 @@ def build_parser():
     meta_parser.add_argument("--lora-alpha", type=float, default=8.0)
     meta_parser.add_argument(
         "--meta-support", type=int, default=16,
-        help="K: calibration frames per subject used to adapt (support set).",
+        help="K: calibration frames per subject used to adapt (support set). In "
+             "--calib-support-root mode this is the *cap* on support size; each "
+             "episode samples a variable count in [4, min(K, n_calib)] so one "
+             "adapter generalizes across the K=4..72 deploy sweep. <=0 means use "
+             "up to all available calibration frames.",
+    )
+    meta_parser.add_argument(
+        "--calib-support-root", default=None,
+        help="Root of the pre-task calibration support set (e.g. "
+             "datasets/calib_support_K72). When set, the inner-loop SUPPORT is "
+             "drawn from each subject's calibration-task frames (deploy-faithful) "
+             "instead of random in-task frames; the QUERY stays on in-task frames. "
+             "Use the densest K (K72) so variable support sizes can be sampled.",
+    )
+    meta_parser.add_argument(
+        "--calib-metadata-path", default=None,
+        help="Optional metadata path override for the calibration support set.",
     )
     meta_parser.add_argument(
         "--meta-query", type=int, default=32,
@@ -430,6 +446,11 @@ def build_parser():
     cmp_parser.add_argument("--meta-checkpoint", required=True,
                             help="Trained `metatrain` checkpoint (encoder+head+adapter init).")
     cmp_parser.add_argument(
+        "--base-adv-checkpoint", default=None,
+        help="Optional adversarially-trained base `train` checkpoint. When given, "
+             "a 'base_adv' column is added: that model's RAW (uncalibrated) error "
+             "on the query set, for a base vs base_adv comparison.")
+    cmp_parser.add_argument(
         "--meta-adv-checkpoint", default=None,
         help="Optional second `metatrain` checkpoint built on subject-adversarial "
              "features (i.e. metatrain --init-checkpoint <a --subject-adv run>). "
@@ -439,6 +460,12 @@ def build_parser():
                             help="Calibration frames per subject (matched across the three methods).")
     cmp_parser.add_argument("--trials", type=int, default=5,
                             help="Random support/query draws per recording; results are averaged.")
+    cmp_parser.add_argument(
+        "--calib-support-root", default=None,
+        help="If set, calibrate on the fixed 9 cluster-selected calibration "
+             "frames in this dataset root (built by generate_calib_support.py) "
+             "instead of K random task frames. Support = the recording's 9 "
+             "calibration-point frames; query = ALL its task frames; trials=1.")
     cmp_parser.add_argument(
         "--inner-steps", type=int, default=20,
         help="Inner-loop SGD steps used when adapting the meta adapter on K "
@@ -508,9 +535,29 @@ def build_parser():
              "readout. Use embedding for --svr-embed in metacompare.",
     )
     svr_parser.add_argument("--k", type=int, default=16,
-                            help="Calibration frames per subject during HP search.")
+                            help="Calibration frames per subject during HP search. "
+                                 "Ignored in --calib-support-root mode (support = the "
+                                 "subject's full calibration set).")
     svr_parser.add_argument("--trials", type=int, default=3,
-                            help="Random support/query draws per subject per fitness eval.")
+                            help="Random support/query draws per subject per fitness eval. "
+                                 "Forced to 1 in --calib-support-root mode (fixed support).")
+    svr_parser.add_argument(
+        "--calib-support-root", default=None,
+        help="Deploy-faithful HP tuning: fit each training subject's SVR on its "
+             "PRE-TASK calibration frames under this root (e.g. "
+             "datasets/calib_support_K9) and score on its in-task frames -- "
+             "matching how SVR is used in the calibration metacompare. Still "
+             "leak-free (held-out subjects never seen). Tune once per K.",
+    )
+    svr_parser.add_argument(
+        "--calib-metadata-path", default=None,
+        help="Optional metadata path override for the calibration support set.",
+    )
+    svr_parser.add_argument(
+        "--query-cap", type=int, default=400,
+        help="Max in-task query frames per subject used to score a candidate "
+             "triple in --calib-support-root mode (subsampled for speed).",
+    )
     svr_parser.add_argument(
         "--optimizer", choices=("pso", "mvo", "jaya"), default="pso",
         help="Swarm optimizer for the HP search. pso (default) = Particle Swarm; "

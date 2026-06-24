@@ -46,6 +46,7 @@ from . import accel
 from .dataset import (
     build_multistream_dataset_maybe_video,
     sync_vivit_temporal_window_from_checkpoint,
+    MultiStreamGazeDataset,
 )
 from .models import vivit_kwargs_from_args, batch_multistream_for_mode, create_model
 from .splits import recording_kfolds, select_splits
@@ -287,6 +288,60 @@ def _make_fitness(X_by_rec, gazes_by_rec, k, trials, seed):
     return fitness
 
 
+def _build_calib_dataset(args):
+    """Dataset over the per-subject pre-task calibration support frames (same
+    crop/grid/mean conventions as the task dataset; mirrors metacompare)."""
+    root = args.calib_support_root
+    return MultiStreamGazeDataset(
+        data_path=root,
+        mean_path=args.mean_path,
+        eye_path=root,
+        metadata_path=getattr(args, "calib_metadata_path", None),
+        face_folder=getattr(args, "face_folder", "appleFace"),
+        left_eye_folder=getattr(args, "left_eye_folder", "appleLeftEye"),
+        right_eye_folder=getattr(args, "right_eye_folder", "appleRightEye"),
+        image_size=args.image_size,
+        eye_size=getattr(args, "eye_size", 224),
+        grid_size=getattr(args, "grid_size", 25),
+        use_grid=getattr(args, "use_grid", False),
+    )
+
+
+def _make_calib_fitness(Xs_by_rec, ys_by_rec, Xq_by_rec, yq_by_rec, query_cap, seed):
+    """Deploy-faithful fitness: SVR fit on each subject's CALIBRATION support
+    (``Xs_by_rec``) and scored on its in-task query (``Xq_by_rec``). Support is
+    fixed (no trials); query is subsampled to ``query_cap`` for speed. Only
+    training-fold subjects are passed in, so held-out subjects are never seen.
+    """
+    from sklearn.svm import SVR
+    rng = random.Random(seed)
+    # fixed query subsample per rec, identical across all candidate triples
+    qsub_by_rec = {}
+    for rec, Xq in Xq_by_rec.items():
+        n = len(Xq)
+        if rec not in Xs_by_rec or len(Xs_by_rec[rec]) == 0 or n == 0:
+            continue
+        idx = list(range(n))
+        if n > query_cap:
+            idx = rng.sample(idx, query_cap)
+        qsub_by_rec[rec] = idx
+
+    def fitness(params):
+        C, gamma, epsilon = float(params[0]), float(params[1]), float(params[2])
+        errs = []
+        for rec, qidx in qsub_by_rec.items():
+            Xs, ys = Xs_by_rec[rec], ys_by_rec[rec]
+            Xq, yq = Xq_by_rec[rec][qidx], yq_by_rec[rec][qidx]
+            svr_x = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(Xs, ys[:, 0])
+            svr_y = SVR(kernel="rbf", C=C, gamma=gamma, epsilon=epsilon).fit(Xs, ys[:, 1])
+            px = svr_x.predict(Xq)
+            py = svr_y.predict(Xq)
+            errs.append(float(np.mean(np.sqrt((px - yq[:, 0]) ** 2 + (py - yq[:, 1]) ** 2))))
+        return float(np.mean(errs)) if errs else float("inf")
+
+    return fitness
+
+
 def _load_base_checkpoint(path, device):
     ckpt = torch.load(path, map_location=device)
     saved = ckpt.get("args", {})
@@ -325,10 +380,13 @@ def _run_svrsearch(args):
 
     want_features = (getattr(args, "space", "prediction") == "embedding")
     optimizer_name = getattr(args, "optimizer", "pso").lower()
+    calib_mode = bool(getattr(args, "calib_support_root", None))
+    calib_ds = _build_calib_dataset(args) if calib_mode else None
     log(f"Device: {device}")
     log(f"svrsearch optimizer={optimizer_name} "
         f"space={'embedding' if want_features else 'prediction'} "
-        f"K={args.k} trials={args.trials} pop={args.pop} iters={args.iters} "
+        f"{'calib_support=' + args.calib_support_root if calib_mode else f'K={args.k} trials={args.trials}'} "
+        f"pop={args.pop} iters={args.iters} "
         f"bounds=[{list(DEFAULT_LB)}, {list(DEFAULT_UB)}]")
 
     out = {}
@@ -348,8 +406,23 @@ def _run_svrsearch(args):
             X_by_rec[int(r)] = X[mask]
             gazes_by_rec[int(r)] = gazes[mask]
 
-        fitness = _make_fitness(X_by_rec, gazes_by_rec,
-                                k=args.k, trials=args.trials, seed=args.seed + fold)
+        if calib_mode:
+            # Support = the training subjects' calibration frames (deploy-faithful).
+            calib_idx = calib_ds.indices_for_recordings(split["train_recordings"])
+            Xc, yc, rc = _cache(
+                model, calib_ds, calib_idx, gaze_mean, gaze_std,
+                device, args.batch_size, args.num_workers, want_features=want_features)
+            Xs_by_rec, ys_by_rec = {}, {}
+            for r in np.unique(rc):
+                m = rc == r
+                Xs_by_rec[int(r)] = Xc[m]
+                ys_by_rec[int(r)] = yc[m]
+            fitness = _make_calib_fitness(
+                Xs_by_rec, ys_by_rec, X_by_rec, gazes_by_rec,
+                query_cap=args.query_cap, seed=args.seed + fold)
+        else:
+            fitness = _make_fitness(X_by_rec, gazes_by_rec,
+                                    k=args.k, trials=args.trials, seed=args.seed + fold)
 
         def progress(it, best_f, best_x):
             if it == 0 or it == args.iters or it % max(1, args.iters // 10) == 0:

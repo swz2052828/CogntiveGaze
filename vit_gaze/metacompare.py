@@ -29,6 +29,7 @@ import torch.utils.data as data
 from . import accel
 from .calibration import SVRCalibrator
 from .dataset import (
+    MultiStreamGazeDataset,
     build_multistream_dataset_maybe_video,
     sync_vivit_temporal_window_from_checkpoint,
 )
@@ -71,9 +72,18 @@ def _run_metacompare(args):
     log(f"metacompare K={args.k} trials={args.trials} inner_steps={args.inner_steps} "
         f"inner_lr={args.inner_lr} svr_C={args.svr_C}")
 
+    calib_dataset = None
+    if getattr(args, "calib_support_root", None):
+        calib_dataset = _build_calib_dataset(args)
+        log(f"Calibration mode: cluster9 fixed support from {args.calib_support_root} "
+            f"({len(calib_dataset)} calib frames)")
+
     fold_rows = []
     for split in splits:
-        fold_rows.append(_compare_one_fold(args, dataset, split, device))
+        if calib_dataset is not None:
+            fold_rows.append(_compare_one_fold_calib(args, dataset, calib_dataset, split, device))
+        else:
+            fold_rows.append(_compare_one_fold(args, dataset, split, device))
 
     if fold_rows:
         methods = _active_methods(args)
@@ -98,7 +108,10 @@ def _run_metacompare(args):
 
 
 def _active_methods(args):
-    methods = ["base", "svr"]
+    methods = ["base"]
+    if getattr(args, "base_adv_checkpoint", None):
+        methods.append("base_adv")
+    methods += ["svr"]
     if getattr(args, "svr_embed", False):
         methods.append("svr_embed")
     if getattr(args, "fc_ft", False):
@@ -262,6 +275,124 @@ def _meta_predict(bundle, sup_rows, qry_rows, gazes, device, inner_lr, inner_ste
             model.readout(adapter.func(f_qry, fast)).float(), mean, std).cpu().numpy()
 
 
+def _build_calib_dataset(args):
+    """Dataset over the fixed 9-frame-per-subject calibration support set.
+    Same crop/grid conventions as the task dataset, different data root."""
+    root = args.calib_support_root
+    return MultiStreamGazeDataset(
+        data_path=root,
+        mean_path=args.mean_path,
+        eye_path=root,
+        metadata_path=getattr(args, "calib_metadata_path", None),
+        face_folder=getattr(args, "face_folder", "appleFace"),
+        left_eye_folder=getattr(args, "left_eye_folder", "appleLeftEye"),
+        right_eye_folder=getattr(args, "right_eye_folder", "appleRightEye"),
+        image_size=args.image_size,
+        eye_size=getattr(args, "eye_size", 224),
+        grid_size=getattr(args, "grid_size", 25),
+        use_grid=getattr(args, "use_grid", False),
+    )
+
+
+def _compare_one_fold_calib(args, dataset, calib_dataset, split, device):
+    """cluster9 calibration: support = the recording's 9 calibration-point frames
+    (from calib_dataset), query = ALL its task frames. Fixed support, so no trials."""
+    fold = split["fold"]
+    val_recs = split["val_recordings"]
+    val_idx = dataset.indices_for_recordings(val_recs)
+    calib_idx = calib_dataset.indices_for_recordings(val_recs)
+    if not val_idx or not calib_idx:
+        raise RuntimeError(f"Fold {fold}: empty task ({len(val_idx)}) or calib ({len(calib_idx)}) indices.")
+    methods = _active_methods(args)
+
+    base_model, base_mean, base_std = _load_base_checkpoint(args.base_checkpoint, device)
+    meta_model, adapter, meta_mean, meta_std = _load_meta_checkpoint(args.meta_checkpoint, device)
+
+    log(f"Fold {fold} cluster9 caching features val_recordings={val_recs}")
+    bf_t, gz_t, bp_t, be_t = _features_and_preds(
+        base_model, dataset, val_idx, base_mean, base_std, device, args.batch_size, args.num_workers)
+    mf_t, gzm_t, _, _ = _features_and_preds(
+        meta_model, dataset, val_idx, meta_mean, meta_std, device, args.batch_size, args.num_workers)
+    bf_c, gz_c, bp_c, be_c = _features_and_preds(
+        base_model, calib_dataset, calib_idx, base_mean, base_std, device, args.batch_size, args.num_workers)
+    mf_c, gzm_c, _, _ = _features_and_preds(
+        meta_model, calib_dataset, calib_idx, meta_mean, meta_std, device, args.batch_size, args.num_workers)
+
+    adv_base_pred_t = None                      # raw adversarial-base preds on query
+    if "base_adv" in methods:
+        adv_base_model, ab_mean, ab_std = _load_base_checkpoint(args.base_adv_checkpoint, device)
+        _, _, adv_base_pred_t, _ = _features_and_preds(
+            adv_base_model, dataset, val_idx, ab_mean, ab_std, device, args.batch_size, args.num_workers)
+
+    adv_bundle_src = None
+    if "meta_adv" in methods:
+        adv_model, adv_adapter, adv_mean, adv_std = _load_meta_checkpoint(args.meta_adv_checkpoint, device)
+        af_t, _, _, _ = _features_and_preds(adv_model, dataset, val_idx, adv_mean, adv_std, device, args.batch_size, args.num_workers)
+        af_c, _, _, _ = _features_and_preds(adv_model, calib_dataset, calib_idx, adv_mean, adv_std, device, args.batch_size, args.num_workers)
+        adv_bundle_src = (adv_model, adv_adapter, af_c, af_t, adv_mean, adv_std)
+
+    def group(idxs, ds):
+        out = {}
+        for row, i in enumerate(idxs):
+            out.setdefault(int(ds.samples[i][-2]), []).append(row)
+        return out
+    rows_t = group(val_idx, dataset)
+    rows_c = group(calib_idx, calib_dataset)
+
+    per_rec = {k: [] for k in methods}
+    for rec, tq in rows_t.items():
+        cs = rows_c.get(rec)
+        if not cs:
+            log(f"Fold {fold} rec={rec} skipped (no calibration frames)")
+            continue
+        n = len(cs)
+        cat = lambda a, b, ci, ti: torch.cat([a[ci], b[ti]])
+        bp = cat(bp_c, bp_t, cs, tq); be = cat(be_c, be_t, cs, tq)
+        bfeat = cat(bf_c, bf_t, cs, tq); mfeat = cat(mf_c, mf_t, cs, tq)
+        gz = cat(gz_c, gz_t, cs, tq)
+        sup_rows = list(range(n)); qry_rows = list(range(n, n + len(tq)))
+        gt_q = gz[qry_rows].numpy()
+        means = {}
+
+        means["base"] = float(np.linalg.norm(bp[qry_rows].numpy() - gt_q, axis=1).mean())
+        if adv_base_pred_t is not None:      # raw adversarial-base error (no calibration)
+            means["base_adv"] = float(np.linalg.norm(adv_base_pred_t[tq].numpy() - gt_q, axis=1).mean())
+        svr = SVRCalibrator(C=args.svr_C, epsilon=args.svr_eps, gamma=args.svr_gamma).fit(
+            bp[sup_rows].numpy(), gz[sup_rows].numpy())
+        means["svr"] = float(np.linalg.norm(svr.transform(bp[qry_rows].numpy()) - gt_q, axis=1).mean())
+        if "svr_embed" in methods:
+            pe = _svr_embed_predict(be, gz, sup_rows, qry_rows,
+                                    C=args.svr_embed_C, gamma=args.svr_embed_gamma, epsilon=args.svr_embed_eps)
+            means["svr_embed"] = float(np.linalg.norm(pe - gt_q, axis=1).mean())
+        if "fc_ft" in methods:
+            pf = _fc_ft_predict(base_model, base_mean, base_std, bfeat, gz, sup_rows, qry_rows, device,
+                                lr=args.fc_ft_lr, steps=args.fc_ft_steps, weight_decay=args.fc_ft_weight_decay)
+            means["fc_ft"] = float(np.linalg.norm(pf - gt_q, axis=1).mean())
+        pm = _meta_predict((meta_model, adapter, mfeat, meta_mean, meta_std),
+                           sup_rows, qry_rows, gz, device, args.inner_lr, args.inner_steps)
+        means["meta"] = float(np.linalg.norm(pm - gt_q, axis=1).mean())
+        if adv_bundle_src is not None:
+            am, aa, afc, aft, amean, astd = adv_bundle_src
+            amf = torch.cat([afc[cs], aft[tq]])
+            pa = _meta_predict((am, aa, amf, amean, astd), sup_rows, qry_rows, gz, device,
+                               args.inner_lr, args.inner_steps)
+            means["meta_adv"] = float(np.linalg.norm(pa - gt_q, axis=1).mean())
+
+        for k in methods:
+            per_rec[k].append(means.get(k, float("nan")))
+        log(f"Fold {fold} rec={rec} K={n}(calib) " + " ".join(f"{k}={means[k]:.4f}" for k in methods))
+
+    fold_summary = {"fold": fold}
+    for k in methods:
+        fold_summary[k] = float(np.mean(per_rec[k])) if per_rec[k] else float("nan")
+    for k in ("base_adv", "svr_embed", "fc_ft", "meta_adv"):
+        fold_summary.setdefault(k, float("nan"))
+    log(f"Fold {fold} done cluster9 " + " ".join(f"mean_{k}={fold_summary[k]:.4f}" for k in methods))
+    if args.csv_out:
+        _append_csv(args.csv_out, fold_summary, args)
+    return fold_summary
+
+
 def _compare_one_fold(args, dataset, split, device):
     fold = split["fold"]
     val_idx = dataset.indices_for_recordings(split["val_recordings"])
@@ -381,9 +512,9 @@ def _append_csv(path, row, args):
         w = csv.writer(f)
         if new:
             w.writerow(["fold", "seed", "K", "trials", "inner_steps", "inner_lr",
-                        "svr_C", "base", "svr", "svr_embed", "fc_ft", "meta", "meta_adv"])
+                        "svr_C", "base", "base_adv", "svr", "svr_embed", "fc_ft", "meta", "meta_adv"])
         w.writerow([row["fold"], args.seed, args.k, args.trials, args.inner_steps, args.inner_lr,
-                    args.svr_C, row["base"], row["svr"],
+                    args.svr_C, row["base"], row.get("base_adv", float("nan")), row["svr"],
                     row.get("svr_embed", float("nan")),
                     row.get("fc_ft", float("nan")), row["meta"],
                     row.get("meta_adv", float("nan"))])

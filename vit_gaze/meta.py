@@ -34,7 +34,7 @@ import torch.nn.functional as F
 import torch.utils.data as data
 
 from . import accel
-from .dataset import build_multistream_dataset_maybe_video
+from .dataset import build_multistream_dataset_maybe_video, MultiStreamGazeDataset
 from .models import vivit_kwargs_from_args, batch_multistream_for_mode, create_model
 from .multistream_backbones.adapter import MultistreamBackboneBase
 from .multistream_backbones.adapters import make_adapter
@@ -114,6 +114,27 @@ def _supports_meta(model):
     return type(model).forward_features is not MultistreamBackboneBase.forward_features
 
 
+def _build_calib_dataset(args):
+    """Dataset over the fixed per-subject pre-task calibration support frames.
+    Same crop/grid conventions as the task dataset, different data root. Mirrors
+    metacompare._build_calib_dataset so meta-training and eval use identical
+    support to deployment."""
+    root = args.calib_support_root
+    return MultiStreamGazeDataset(
+        data_path=root,
+        mean_path=args.mean_path,
+        eye_path=root,
+        metadata_path=getattr(args, "calib_metadata_path", None),
+        face_folder=getattr(args, "face_folder", "appleFace"),
+        left_eye_folder=getattr(args, "left_eye_folder", "appleLeftEye"),
+        right_eye_folder=getattr(args, "right_eye_folder", "appleRightEye"),
+        image_size=args.image_size,
+        eye_size=getattr(args, "eye_size", 224),
+        grid_size=getattr(args, "grid_size", 25),
+        use_grid=getattr(args, "use_grid", False),
+    )
+
+
 @torch.no_grad()
 def _cache_features(args, model, dataset, indices, device):
     """Run the frozen encoder once over ``indices`` and cache fused features.
@@ -178,6 +199,29 @@ def _meta_one_fold(args, dataset, split, device):
     tr_feats, tr_gazes, tr_recs = _cache_features(args, model, dataset, train_idx, device)
     va_feats, va_gazes, va_recs = _cache_features(args, model, dataset, val_idx, device)
 
+    # Deploy-faithful support: draw the inner-loop support from each subject's
+    # pre-task calibration frames (a separate recording/task) rather than random
+    # in-task frames. The QUERY stays on in-task frames (labels available at
+    # train time). Caches calib features for both train and val recordings.
+    calib_mode = bool(getattr(args, "calib_support_root", None))
+    cf_rows = vf_rows = None
+    cf_feats = cf_gazes = vf_feats = vf_gazes = None
+    if calib_mode:
+        calib_ds = _build_calib_dataset(args)
+        cidx_tr = calib_ds.indices_for_recordings(split["train_recordings"])
+        cidx_va = calib_ds.indices_for_recordings(split["val_recordings"])
+        if not cidx_tr or not cidx_va:
+            raise RuntimeError(
+                f"Fold {fold}: empty calib support train ({len(cidx_tr)}) or "
+                f"val ({len(cidx_va)}) indices under {args.calib_support_root}.")
+        log(f"Fold {fold} caching CALIBRATION support features "
+            f"(train={len(cidx_tr)} val={len(cidx_va)} frames) "
+            f"from {args.calib_support_root}")
+        cf_feats, cf_gazes, cf_recs = _cache_features(args, model, calib_ds, cidx_tr, device)
+        vf_feats, vf_gazes, vf_recs = _cache_features(args, model, calib_ds, cidx_va, device)
+        cf_rows = _rec_to_rows(cf_recs)
+        vf_rows = _rec_to_rows(vf_recs)
+
     gaze_mean = tr_gazes.mean(dim=0).to(device)
     gaze_std = tr_gazes.std(dim=0).clamp_min(1e-6).to(device)
     dim = tr_feats.shape[1]
@@ -190,16 +234,34 @@ def _meta_one_fold(args, dataset, split, device):
     meta_opt = torch.optim.AdamW(meta_params, lr=args.outer_lr)
 
     tr_rows = _rec_to_rows(tr_recs)
-    task_recs = [r for r, rows in tr_rows.items()
-                 if len(rows) >= args.meta_support + 1]
+    if calib_mode:
+        # need >=1 calib support frame and >=1 in-task query frame per task
+        task_recs = [r for r, rows in tr_rows.items()
+                     if rows and cf_rows.get(r)]
+    else:
+        task_recs = [r for r, rows in tr_rows.items()
+                     if len(rows) >= args.meta_support + 1]
     if not task_recs:
         raise RuntimeError(
-            f"Fold {fold}: no training recording has >= {args.meta_support + 1} "
-            f"frames; lower --meta-support.")
+            f"Fold {fold}: no eligible training recording "
+            f"({'no calib support overlap' if calib_mode else f'>= {args.meta_support + 1} frames'}).")
 
     rng = random.Random(args.seed + fold)
     model.eval()  # disable head dropout for stable adaptation
     K, Q = args.meta_support, args.meta_query
+
+    def sample_support_rows(rec):
+        """Variable-size support drawn from calibration frames (deploy-faithful)
+        in calib_mode, else random in-task frames (legacy)."""
+        if calib_mode:
+            pool = cf_rows[rec]
+            hi = len(pool) if K <= 0 else min(K, len(pool))
+            lo = min(4, hi)
+            k_sup = rng.randint(lo, hi)
+            return rng.sample(pool, k_sup), cf_feats, cf_gazes
+        pool = tr_rows[rec][:]
+        rng.shuffle(pool)
+        return pool[:K], tr_feats, tr_gazes
 
     for it in range(1, args.meta_iters + 1):
         meta_opt.zero_grad(set_to_none=True)
@@ -207,12 +269,17 @@ def _meta_one_fold(args, dataset, split, device):
         adapter_grad = [torch.zeros_like(p) for p in adapter.parameters()]
 
         for rec in tasks:
-            rows = tr_rows[rec][:]
-            rng.shuffle(rows)
-            sup_rows = rows[:K]
-            qry_rows = rows[K:K + Q] if len(rows) > K else rows[:Q]
-            f_sup = tr_feats[sup_rows].to(device)
-            y_sup = normalize_gaze(tr_gazes[sup_rows].to(device), gaze_mean, gaze_std)
+            sup_rows, sup_feats, sup_gazes = sample_support_rows(rec)
+            if calib_mode:
+                qrows = tr_rows[rec][:]
+                rng.shuffle(qrows)
+                qry_rows = qrows[:Q]
+            else:
+                rows = tr_rows[rec][:]
+                rng.shuffle(rows)
+                qry_rows = rows[K:K + Q] if len(rows) > K else rows[:Q]
+            f_sup = sup_feats[sup_rows].to(device)
+            y_sup = normalize_gaze(sup_gazes[sup_rows].to(device), gaze_mean, gaze_std)
             f_qry = tr_feats[qry_rows].to(device)
             y_qry = normalize_gaze(tr_gazes[qry_rows].to(device), gaze_mean, gaze_std)
 
@@ -235,7 +302,8 @@ def _meta_one_fold(args, dataset, split, device):
                 f"query_loss={loss_q.item() * len(tasks):.6f}")
 
     pre_err, post_err = _meta_eval(args, model, adapter, va_feats, va_gazes, va_recs,
-                                   gaze_mean, gaze_std, device)
+                                   gaze_mean, gaze_std, device,
+                                   sup_feats=vf_feats, sup_gazes=vf_gazes, sup_rows_by_rec=vf_rows)
     log(f"Fold {fold} done meta_pre_adapt_error={pre_err:.6f} "
         f"meta_post_adapt_error={post_err:.6f} improvement={pre_err - post_err:.6f}")
 
@@ -243,9 +311,14 @@ def _meta_one_fold(args, dataset, split, device):
     return {"fold": fold, "pre_error": pre_err, "post_error": post_err}
 
 
-def _meta_eval(args, model, adapter, feats, gazes, recs, gaze_mean, gaze_std, device):
-    """Per held-out recording: adapt on K frames, report pre/post coord error (cm)."""
+def _meta_eval(args, model, adapter, feats, gazes, recs, gaze_mean, gaze_std, device,
+               sup_feats=None, sup_gazes=None, sup_rows_by_rec=None):
+    """Per held-out recording: adapt on the support frames, report pre/post coord
+    error (cm). In calib mode (sup_feats given) the support is the subject's full
+    pre-task calibration set and the query is ALL of its in-task frames -- the
+    exact deploy protocol. Otherwise support = K random in-task frames (legacy)."""
     model.eval()
+    calib_mode = sup_feats is not None
     rows_by_rec = _rec_to_rows(recs)
     K = args.meta_support
     steps = getattr(args, "adapt_steps", None) or args.inner_steps
@@ -253,13 +326,21 @@ def _meta_eval(args, model, adapter, feats, gazes, recs, gaze_mean, gaze_std, de
     pre_errors, post_errors = [], []
 
     for rec, rows in rows_by_rec.items():
-        if len(rows) <= K:
-            continue
-        rows = rows[:]
-        rng.shuffle(rows)
-        sup_rows, qry_rows = rows[:K], rows[K:]
-        f_sup = feats[sup_rows].to(device)
-        y_sup = normalize_gaze(gazes[sup_rows].to(device), gaze_mean, gaze_std)
+        if calib_mode:
+            sup_rows = sup_rows_by_rec.get(rec)
+            if not sup_rows or not rows:
+                continue
+            qry_rows = rows[:]
+            f_sup = sup_feats[sup_rows].to(device)
+            y_sup = normalize_gaze(sup_gazes[sup_rows].to(device), gaze_mean, gaze_std)
+        else:
+            if len(rows) <= K:
+                continue
+            rows = rows[:]
+            rng.shuffle(rows)
+            sup_rows, qry_rows = rows[:K], rows[K:]
+            f_sup = feats[sup_rows].to(device)
+            y_sup = normalize_gaze(gazes[sup_rows].to(device), gaze_mean, gaze_std)
         f_qry = feats[qry_rows].to(device)
         g_qry = gazes[qry_rows].to(device)
 
