@@ -21,3 +21,15 @@
 | dinov2 | 5.23 | 6.00 | 5.48 | 5.78 | 4.94 | 5.40 | 5.95 | fc_ft 4.94 |
 | normface_convnext | 5.86 | 4.91 | 6.47 | 6.36 | 5.76 | 5.94 | 5.01 | meta_adv 5.01 |
 | itracker | 5.95 | 6.53 | 7.10 | 7.35 | 5.56 | 5.25 | 6.35 | meta 5.25 |
+
+## Impact of the deploy-faithful fix (cross-backbone mean, n=19)
+
+| method | old | new | delta |
+|---|---|---|---|
+| svr | 7.52 | 5.63 | -1.90 |
+| svr_embed | 7.81 | 5.35 | -2.46 |
+| fc_ft | 4.54 | 4.54 | -0.00 |
+| meta | 4.85 | 4.57 | -0.28 |
+| meta_adv | 5.15 | 4.69 | -0.46 |
+
+old = random-K-from-test support + fixed-default SVR + in-task-support meta; new = pre-task calibration frames + swarm-tuned SVR + calib-trained meta. fc_ft uses fixed Zhu defaults in both (sanity check). Best-calibrator wins: fc_ft 7, meta 6, meta_adv 5, svr_embed 1, raw svr 0. Overall best: mobile_vit + fc_ft = 3.50 cm.
