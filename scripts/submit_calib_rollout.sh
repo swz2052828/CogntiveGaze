@@ -14,12 +14,13 @@ set -euo pipefail
 RUNS_DIR=/springbrook/share/eng/esrpxk/runs
 cd /springbrook/share/eng/esrpxk/CogntiveGaze
 
-# mobile_vit_rep1 already has _calib adapters + a finished/running _calib sweep.
-RUNS="convnext_lr1e4 convnextv2_lr1e4 dinov2_lr1e4 eva02_lr1e4
+# Override RUNS to sweep a different set (run-dir suffixes under runs/meta_pipeline_).
+# mobile_vit_rep1 already has _calib adapters + a finished _calib sweep.
+: "${RUNS:=convnext_lr1e4 convnextv2_lr1e4 dinov2_lr1e4 eva02_lr1e4
 eyes_only_convnextv2_lr1e4 eyes_only_eva02_tiny_lr1e4 eyes_only_fastvit_lr1e4
 eyes_only_mgazenet_lr1e4 eyes_only_mobilenet_v3_lr1e4 eyes_only_mobilenet_v4_lr1e4
 eyes_only_mobilevitv2_lr1e4 eyes_only_vit_lr1e4 face_only_mobile_vit_lr1e4
-foveal_vit_lr1e4 itracker_lr1e4 mobilevitv2_lr1e4 normface_convnext_lr1e4 repvit_lr1e4"
+foveal_vit_lr1e4 itracker_lr1e4 mobilevitv2_lr1e4 normface_convnext_lr1e4 repvit_lr1e4}"
 
 for r in $RUNS; do
   RD="$RUNS_DIR/meta_pipeline_$r"
