@@ -25,8 +25,17 @@ VIDEO = f"/springbrook/share/eng/esrpxk/datasets/videos/subid_{SUB}.mp4"
 GT_FILE = "/springbrook/share/eng/esrpxk/datasets/extracted_blinks/00011"
 OUT = "/springbrook/share/eng/esrpxk/datasets/ear_accuracy_sub11"
 ROT = cv2.ROTATE_90_CLOCKWISE
-EAR_THR = 0.2
 MARGIN = 30  # frames of context around the GT span
+_THR_MAP = "/springbrook/share/eng/esrpxk/datasets/ear_vs_gt/per_subject_ear_thr.csv"
+def _ear_threshold(sub, default=0.23):
+    try:
+        for r in csv.DictReader(open(_THR_MAP)):
+            if int(r["subject"]) == sub:
+                return float(r["thr"])
+    except FileNotFoundError:
+        pass
+    return default
+EAR_THR = _ear_threshold(SUB)  # per-subject optimum (sub11); default 0.23
 
 
 def runs_from_flags(frame_ids, flags):
@@ -57,17 +66,22 @@ def main():
     print(f"sub{SUB}: {len(gt_intervals)} GT events, processing frames {lo}..{hi}", flush=True)
 
     cap = cv2.VideoCapture(VIDEO)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, lo)
     mesh = VideoFaceDetector()
 
     fids, ears, noface = [], [], 0
-    fr = lo
+    # Decode sequentially from frame 0 -- do NOT cap.set(POS_FRAMES): for H.264 it
+    # lands on the nearest keyframe, mislabeling frames by a per-video constant and
+    # creating a spurious EAR-vs-GT offset. fr is then the TRUE video frame index.
+    fr = 1  # 1-indexed to match ProcessedData/appleFace + GT numbering
     fh = open(f"{OUT}/per_frame_ear.csv", "w", newline="")
     w = csv.writer(fh); w.writerow(["frame", "ear", "no_face"])
     while fr <= hi:
         ok, f = cap.read()
         if not ok:
             break
+        if fr < lo:
+            fr += 1
+            continue
         lm = mesh.detect(cv2.cvtColor(cv2.rotate(f, ROT), cv2.COLOR_BGR2RGB))
         if lm is None:
             noface += 1
@@ -84,6 +98,20 @@ def main():
     ears = np.array(ears)
     fids = np.array(fids)
     print(f"processed {len(fids)} frames, no_face={noface}", flush=True)
+
+    # restrict to the GT task windows (t_init + task_begin, length task_len);
+    # GT only counts blinks there, and the inter-task gap frames otherwise inflate
+    # EAR false positives. NOT the appleFace glob (a superset incl. gap frames).
+    from gaze_dynamics import config
+    idx = config.SUBJECT_IDS.index(SUB)
+    tinit = config.T_INITS[idx]
+    tb, tl, _ = config.build_task_timeline()
+    taskset = set()
+    for a, l in zip(tb, tl):
+        taskset.update(range(int(a + tinit), int(a + tinit + l)))
+    keep = np.array([int(f) in taskset for f in fids])
+    fids, ears = fids[keep], ears[keep]
+    print(f"task-window frames kept: {int(keep.sum())} of {len(keep)}", flush=True)
 
     # GT frame membership
     gt_frame = np.zeros(len(fids), bool)

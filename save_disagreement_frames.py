@@ -42,15 +42,32 @@ def main():
         tasks.append((mid, kind, r["type"], r["min_ear"], r["note"]))
     tasks.sort()
     base = f"{D}/disagreement_frames/subid_{sub}"
+    OFFS = (0, -2, 2, -4, 4, -6, 6)
+    # Decode sequentially from frame 0 -- do NOT cap.set(POS_FRAMES): for H.264 it
+    # lands on the nearest keyframe and renders the WRONG frame (a per-video shift).
+    # Cache only the candidate frames, then pick per task. fr is the true index.
+    need = {mid + off for mid, *_ in tasks for off in OFFS}
+    hi = max(need) if need else -1
     cap = cv2.VideoCapture(f"/springbrook/share/eng/esrpxk/datasets/videos/subid_{sub}.mp4")
+    # ProcessedData/appleFace + GT are 1-INDEXED (first frame = #1); OpenCV's first
+    # decoded frame is our #1 so labels match appleFace[N]. (appleFace[N] == cv2
+    # 0-indexed read N-1, verified by template match.)
+    frames = {}; fr = 1
+    while fr <= hi:
+        ok, f = cap.read()
+        if not ok:
+            break
+        if fr in need:
+            frames[fr] = f
+        fr += 1
+    cap.release()
     mesh = VideoFaceDetector()
     saved = 0
     for mid, kind, typ, mn, note in tasks:
         crop = None
-        for off in (0, -2, 2, -4, 4, -6, 6):
-            fr = mid + off
-            cap.set(cv2.CAP_PROP_POS_FRAMES, fr); ok, f = cap.read()
-            if not ok:
+        for off in OFFS:
+            f = frames.get(mid + off)
+            if f is None:
                 continue
             img = cv2.rotate(f, ROT)
             lm = mesh.detect(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -67,7 +84,7 @@ def main():
             continue
         d = f"{base}/{kind}"; os.makedirs(d, exist_ok=True)
         cv2.imwrite(f"{d}/f{mid}.jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 88]); saved += 1
-    mesh.close(); cap.release()
+    mesh.close()
     print(f"sub{sub}: saved {saved}/{len(tasks)} disagreement frames", flush=True)
 
 
