@@ -93,9 +93,9 @@ for SEED in $SEEDS; do
 
   COMMON_TRAIN="$COMMON_DATA --weights imagenet --epochs $EPOCHS --batch-size $BATCH_SIZE \
     --num-workers $NUM_WORKERS --lr $LR --lr-scheduler $LR_SCHEDULER --augment $AUGMENT \
-    --patience $PATIENCE --min-delta $MIN_DELTA --amp --temporal-window $TEMPORAL_WINDOW \
+    --patience $PATIENCE --min-delta $MIN_DELTA --amp --no-accelerate --temporal-window $TEMPORAL_WINDOW \
     --output-activation $OUTPUT_ACTIVATION --gaze-range $GAZE_RANGE \
-    --fold-index $FOLD --seed $SEED"
+    --fold-index $FOLD --seed $SEED ${EXTRA_TRAIN_ARGS:-}"
 
   echo "===================================================="
   echo "[fold $FOLD seed $SEED] base-only training ($BACKBONE)"
