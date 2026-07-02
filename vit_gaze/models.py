@@ -48,6 +48,59 @@ class PairedFaceViTGaze(nn.Module):
         return self.head(fused)
 
 
+class RawFrameViTGaze(nn.Module):
+    """Single-input gaze model over the RAW (uncropped, above-shoulder) frame.
+
+    No face detection, no eye crops, no grid -- the timm ViT's global attention
+    must learn to ignore background and localize the eyes on its own. Built for
+    the facemesh+multistream vs raw-frame comparison: exposes the same
+    ``forward_features`` / ``calibration_feature`` contract as the multistream
+    backbones so fc_ft / svr_embed calibration reuse the cached-feature path.
+    Default encoder vit_small_patch16_384 (21.8M, weights pre-cached in HF_HOME).
+    """
+
+    def __init__(self, weights="none", freeze_encoder=False, image_size=384,
+                 encoder_name="vit_small_patch16_384.augreg_in21k_ft_in1k"):
+        super().__init__()
+        import timm
+
+        self.image_size = image_size
+        self.encoder = timm.create_model(
+            encoder_name, pretrained=(weights == "imagenet"),
+            num_classes=0, img_size=image_size)
+        hidden_dim = self.encoder.num_features
+        if freeze_encoder:
+            for p in self.encoder.parameters():
+                p.requires_grad = False
+        self.head = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, 512),
+            nn.GELU(),
+            nn.Dropout(0.2),
+            nn.Linear(512, 128),
+            nn.GELU(),
+            nn.Linear(128, 2),
+        )
+
+    # -- calibration contract (mirrors MultistreamBackboneBase) --
+    def forward_features(self, image):
+        return self.encoder(image)
+
+    @property
+    def readout(self):
+        return self.head
+
+    def calibration_feature(self, feats):
+        """Penultimate 128-d activation of the readout, for embedding-space SVR."""
+        x = feats
+        for layer in list(self.head)[:-1]:
+            x = layer(x)
+        return x
+
+    def forward(self, image):
+        return self.head(self.encoder(image))
+
+
 class SingleFaceViTGaze(nn.Module):
     def __init__(self, weights="none", freeze_encoder=False):
         super().__init__()
@@ -128,9 +181,14 @@ def create_model(
     vivit_temporal_layers=4,
     vivit_temporal_heads=8,
     vivit_temporal_dim=512,
+    # raw-frame single-input model (input_mode="raw" + backbone="raw_vit")
+    image_size=224,
 ):
     if input_mode == "paired":
         model = PairedFaceViTGaze(weights=weights, freeze_encoder=freeze_encoder)
+    elif input_mode == "raw" and backbone == "raw_vit":
+        model = RawFrameViTGaze(weights=weights, freeze_encoder=freeze_encoder,
+                                image_size=image_size)
     elif input_mode == "multistream":
         model = build_multistream_backbone(
             backbone=backbone,

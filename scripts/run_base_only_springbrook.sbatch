@@ -84,8 +84,17 @@ PIPE_LOGS="$OUT_ROOT/logs"
 mkdir -p "$BASE_DIR" "$PIPE_LOGS"
 
 CLI="srun --cpus-per-task=$SLURM_CPUS_PER_TASK python vit_gaze_segmenter.py"
-COMMON_DATA="--data-path $DATA_PATH --eye-path $EYE_PATH --mean-path $MEAN_PATH \
-  --input-mode multistream --backbone $BACKBONE --use-grid"
+# INPUT_MODE=raw trains the single-input raw-frame model (RAW_ROOT + IMAGE_SIZE
+# required, no eye/grid streams); default multistream path is unchanged.
+INPUT_MODE="${INPUT_MODE:-multistream}"
+if [ "$INPUT_MODE" = "raw" ]; then
+  COMMON_DATA="--data-path $DATA_PATH --mean-path $MEAN_PATH \
+    --input-mode raw --backbone $BACKBONE \
+    --raw-root ${RAW_ROOT:?} --image-size ${IMAGE_SIZE:-384}"
+else
+  COMMON_DATA="--data-path $DATA_PATH --eye-path $EYE_PATH --mean-path $MEAN_PATH \
+    --input-mode multistream --backbone $BACKBONE --use-grid"
+fi
 
 for SEED in $SEEDS; do
   SBD="$BASE_DIR/seed${SEED}"; mkdir -p "$SBD"
