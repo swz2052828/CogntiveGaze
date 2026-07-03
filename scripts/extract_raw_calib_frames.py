@@ -16,8 +16,10 @@ OUT = "/springbrook/share/eng/esrpxk/datasets/OriginalCalib"
 
 for rec_dir in sorted(glob.glob(f"{SUP}/0*")):
     rec = int(os.path.basename(rec_dir))
-    want = sorted(int(f[:-4]) for f in os.listdir(f"{rec_dir}/appleFace"))
-    task_probe = sorted(int(f[:-4]) for f in os.listdir(f"{ORIG}/{rec:05d}"))[0]
+    want = sorted(int(f[:-4]) for f in os.listdir(f"{rec_dir}/appleFace")
+                  if f.endswith(".jpg") and f[:-4].isdigit())
+    task_probe = sorted(int(f[:-4]) for f in os.listdir(f"{ORIG}/{rec:05d}")
+                        if f.endswith(".jpg") and f[:-4].isdigit())[0]
     targets = set(want) | {task_probe}
     os.makedirs(f"{OUT}/{rec:05d}", exist_ok=True)
     cap = cv2.VideoCapture(f"{VID}/subid_{rec}.mp4")

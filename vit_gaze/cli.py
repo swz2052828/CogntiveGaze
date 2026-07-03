@@ -185,7 +185,7 @@ def build_parser():
     _add_vivit_args(train_parser)
     train_parser.add_argument(
         "--backbone",
-        choices=("raw_vit", "vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "eyes_only_convnextv2", "eyes_only_mobilevitv2", "eyes_only_eva02_tiny", "eyes_only_convnextv2_atto", "eyes_only_convnextv2_binocular", "eyes_only_convnextv2_atto_binocular", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "convnextv2_dualenc", "convnextv2_nano", "convnextv2_atto", "convnextv2_film", "dinov2", "eva02", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
+        choices=("raw_vit", "raw_mobile_vit", "raw_foveal_vit", "vit", "foveal_vit", "vivit", "eyes_only_vit", "eyes_only_mobile_vit", "eyes_only_mgazenet", "eyes_only_mobilenet_v3", "eyes_only_mobilenet_v4", "eyes_only_fastvit", "eyes_only_convnextv2", "eyes_only_mobilevitv2", "eyes_only_eva02_tiny", "eyes_only_convnextv2_atto", "eyes_only_convnextv2_binocular", "eyes_only_convnextv2_atto_binocular", "face_only_mobile_vit", "mobile_vit", "mobilevitv2", "repvit", "convnextv2", "convnextv2_dualenc", "convnextv2_nano", "convnextv2_atto", "convnextv2_film", "dinov2", "eva02", "normface_convnext", "cnn_transformer", "cnn_transformer_raw", "convnext", "mobilenet_v4", "itracker", "mobilenet_v3", "affnet", "mgazenet"),
         default="vit",
         help=(
             "Multistream backbone. vit (default) = shared ViT-B/16 run three "

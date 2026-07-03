@@ -101,6 +101,67 @@ class RawFrameViTGaze(nn.Module):
         return self.head(self.encoder(image))
 
 
+class RawFrameTimmGaze(RawFrameViTGaze):
+    """RawFrameViTGaze with a pluggable timm encoder (raw_mobile_vit etc.)."""
+
+    def __init__(self, weights="none", freeze_encoder=False, image_size=384,
+                 encoder_name="mobilevit_s.cvnets_in1k"):
+        super().__init__(weights=weights, freeze_encoder=freeze_encoder,
+                         image_size=image_size, encoder_name=encoder_name)
+
+
+class RawFrameFovealGaze(nn.Module):
+    """Foveal raw-frame model: full frame downsized + native-res center crop
+    (the face region sits top-center in the 1080x750 above-shoulder crop),
+    shared timm ViT-S encoder, concat features -> readout. Same calibration
+    contract as the other raw models."""
+
+    def __init__(self, weights="none", freeze_encoder=False, image_size=384,
+                 encoder_name="vit_small_patch16_384.augreg_in21k_ft_in1k"):
+        super().__init__()
+        import timm
+        self.image_size = image_size
+        self.encoder = timm.create_model(encoder_name, pretrained=(weights == "imagenet"),
+                                         num_classes=0, img_size=image_size)
+        hidden = self.encoder.num_features * 2
+        if freeze_encoder:
+            for p_ in self.encoder.parameters():
+                p_.requires_grad = False
+        self.head = nn.Sequential(
+            nn.LayerNorm(hidden), nn.Linear(hidden, 512), nn.GELU(), nn.Dropout(0.2),
+            nn.Linear(512, 128), nn.GELU(), nn.Linear(128, 2))
+
+    def _two_views(self, image):
+        B, C, H, W = image.shape
+        s = self.image_size
+        full = nn.functional.interpolate(image, size=(s, s), mode="bilinear",
+                                         align_corners=False)
+        # fovea: top-center square (face region), native-ish res
+        side = min(H, W) * 2 // 3
+        x0 = (W - side) // 2
+        crop = image[:, :, 0:side, x0:x0 + side]
+        crop = nn.functional.interpolate(crop, size=(s, s), mode="bilinear",
+                                         align_corners=False)
+        return full, crop
+
+    def forward_features(self, image):
+        full, crop = self._two_views(image)
+        return torch.cat([self.encoder(full), self.encoder(crop)], dim=1)
+
+    @property
+    def readout(self):
+        return self.head
+
+    def calibration_feature(self, feats):
+        x = feats
+        for layer in list(self.head)[:-1]:
+            x = layer(x)
+        return x
+
+    def forward(self, image):
+        return self.head(self.forward_features(image))
+
+
 class SingleFaceViTGaze(nn.Module):
     def __init__(self, weights="none", freeze_encoder=False):
         super().__init__()
@@ -189,6 +250,12 @@ def create_model(
     elif input_mode == "raw" and backbone == "raw_vit":
         model = RawFrameViTGaze(weights=weights, freeze_encoder=freeze_encoder,
                                 image_size=image_size)
+    elif input_mode == "raw" and backbone == "raw_mobile_vit":
+        model = RawFrameTimmGaze(weights=weights, freeze_encoder=freeze_encoder,
+                                 image_size=image_size)
+    elif input_mode == "raw" and backbone == "raw_foveal_vit":
+        model = RawFrameFovealGaze(weights=weights, freeze_encoder=freeze_encoder,
+                                   image_size=image_size)
     elif input_mode == "multistream":
         model = build_multistream_backbone(
             backbone=backbone,
