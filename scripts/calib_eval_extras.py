@@ -225,7 +225,7 @@ def main():
             # LOO by calibration point (unique gaze targets among support)
             y_sup = gz[sup].numpy()
             pts = np.unique(np.round(y_sup, 3), axis=0)
-            loo = {"fcft_tuned": [], "svr_embed": [], "meta": []}
+            loo = {"fcft_def": [], "svr_embed": [], "meta": []}
             for p9 in pts:
                 is_p = np.all(np.isclose(np.round(y_sup, 3), p9), axis=1)
                 s8 = [sup[i] for i in range(n) if not is_p[i]]
@@ -233,8 +233,8 @@ def main():
                 if not s8 or not qp:
                     continue
                 gt_p = gz[qp].numpy()
-                loo["fcft_tuned"].append(err(_fc_ft_predict(
-                    base_model, b_mean, b_std, bfe, gz, s8, qp, device, **hp), gt_p))
+                loo["fcft_def"].append(err(_fc_ft_predict(
+                    base_model, b_mean, b_std, bfe, gz, s8, qp, device, **FCFT_DEFAULT), gt_p))
                 loo["svr_embed"].append(err(_svr_embed_predict(bee, gz, s8, qp, **svr_hp), gt_p))
                 loo["meta"].append(err(_meta_predict(
                     (meta_model, adapter, mfe, m_mean, m_std), s8, qp, gz, device,
@@ -242,7 +242,7 @@ def main():
             sel = min(loo, key=lambda m: np.mean(loo[m]))
             pick_count[sel] = pick_count.get(sel, 0) + 1
             preds["auto"] = preds[sel]
-            cand = ("fcft_tuned", "svr_embed", "meta")
+            cand = ("fcft_def", "svr_embed", "meta")
             preds["oracle"] = preds[min(cand, key=lambda m: err(preds[m], gt_q))]
 
             for name in ("base", "fcft_def", "fcft_tuned", "svr_embed", "meta", "auto", "oracle"):

@@ -279,7 +279,7 @@ def _build_calib_dataset(args):
     """Dataset over the fixed 9-frame-per-subject calibration support set.
     Same crop/grid conventions as the task dataset, different data root."""
     root = args.calib_support_root
-    return MultiStreamGazeDataset(
+    ds = MultiStreamGazeDataset(
         data_path=root,
         mean_path=args.mean_path,
         eye_path=root,
@@ -292,6 +292,11 @@ def _build_calib_dataset(args):
         grid_size=getattr(args, "grid_size", 25),
         use_grid=getattr(args, "use_grid", False),
     )
+    if getattr(args, "backbone", "") == "vivit":
+        from .dataset import StaticWindowMultiStreamDataset
+        ds = StaticWindowMultiStreamDataset(
+            ds, temporal_window=int(getattr(args, "temporal_window", 8)))
+    return ds
 
 
 def _compare_one_fold_calib(args, dataset, calib_dataset, split, device):

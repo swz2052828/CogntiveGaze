@@ -488,6 +488,39 @@ class MultiStreamVideoDataset(data.Dataset):
         return out
 
 
+class StaticWindowMultiStreamDataset(data.Dataset):
+    """Repeat each single frame T times as a STATIC temporal window.
+
+    Used for vivit calibration support: the fixed calib frames are isolated
+    (no stored temporal neighbours), so we present them as motionless windows.
+    Same output contract as MultiStreamVideoDataset (face/eyes (T,C,H,W),
+    grid (T, grid_len)); recordings/gazes/samples surfaces are passed through
+    so CV-split and grouping code works unchanged."""
+
+    def __init__(self, base, temporal_window=8):
+        self.base = base
+        self.T = int(temporal_window)
+        self.recordings = base.recordings
+        self.gazes = base.gazes
+        self.samples = base.samples
+
+    def unique_recordings(self):
+        return self.base.unique_recordings()
+
+    def indices_for_recordings(self, recording_ids):
+        return self.base.indices_for_recordings(recording_ids)
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        it = dict(self.base[idx])
+        for k in ("face", "eye_left", "eye_right", "grid"):
+            if k in it:
+                it[k] = torch.stack([it[k]] * self.T, dim=0)
+        return it
+
+
 def build_multistream_dataset_maybe_video(args):
     """Build the multistream dataset, wrapping in a video window if --backbone vivit."""
     dataset = build_multistream_dataset(args)
