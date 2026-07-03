@@ -59,10 +59,10 @@ def blink_interp(x, clean):
     return out
 
 
-def apply_per_rec(frames, x, clean, fn):
+def apply_per_rec(frames, x, clean, fn, needs_clean=False):
     out = np.empty_like(x)
     for s, e in _segments(frames):
-        seg = fn(x[s:e], clean[s:e]) if fn.__code__.co_argcount == 2 else fn(x[s:e])
+        seg = fn(x[s:e], clean[s:e]) if needs_clean else fn(x[s:e])
         out[s:e] = seg
     return out
 
@@ -97,7 +97,7 @@ def main():
                     variants[f"med{w}"] = apply_per_rec(fr, p, clean, lambda s, w=w: median_filter(s, w))
                 for a in (0.3, 0.5, 0.7):
                     variants[f"ema{a}"] = apply_per_rec(fr, p, clean, lambda s, a=a: ema_filter(s, a))
-                bi = apply_per_rec(fr, p, clean, lambda s, c: blink_interp(s, c))
+                bi = apply_per_rec(fr, p, clean, blink_interp, needs_clean=True)
                 variants["blinkI"] = bi
                 variants["blinkI+med5"] = apply_per_rec(fr, bi, clean, lambda s: median_filter(s, 5))
                 D = R.setdefault(col, {})
