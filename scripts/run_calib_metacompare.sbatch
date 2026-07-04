@@ -85,9 +85,11 @@ for K in $CALIB_KS; do
       --svr-embed --svr-embed-C $EC --svr-embed-gamma $EG --svr-embed-eps $EE"
     echo "fold $FOLD K=$K tuned SVR: pred(C=$PC g=$PG e=$PE) embed(C=$EC g=$EG e=$EE)"
   fi
+  ADV_ARGS='--base-adv-checkpoint '"$BASE_ADV_CKPT"' --meta-adv-checkpoint '"$META_ADV_CKPT"
+  [ "${NO_ADV:-0}" = "1" ] && ADV_ARGS=""   # vivit: adv aliases base -> columns carry no info
   $CLI metacompare $COMMON \
     --base-checkpoint "$BASE_CKPT" --meta-checkpoint "$META_CKPT" \
-    --base-adv-checkpoint "$BASE_ADV_CKPT" --meta-adv-checkpoint "$META_ADV_CKPT" \
+    $ADV_ARGS \
     --calib-support-root "$CALIB_ROOT" \
     $SVR_HP_ARGS \
     --fc-ft --fc-ft-steps 20 --fc-ft-lr 5e-5 --fc-ft-weight-decay 5e-4 \
