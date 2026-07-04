@@ -49,7 +49,8 @@ def raw_features_and_preds(model, dataset, indices, mean, std, device, bs, nw):
 def load_raw_ckpt(path, device):
     ckpt = torch.load(path, map_location=device)
     saved = ckpt.get("args", {})
-    model = create_model("raw", weights="none", backbone="raw_vit",
+    model = create_model("raw", weights="none",
+                         backbone=str(saved.get("backbone", "raw_vit")),
                          image_size=int(saved.get("image_size", 384)),
                          output_activation=str(saved.get("output_activation", "none")),
                          gaze_range=float(saved.get("gaze_range", 4.0))).to(device)
