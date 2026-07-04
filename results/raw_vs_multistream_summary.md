@@ -37,3 +37,41 @@ resolution, and it is worth far more than its milliseconds. Raw-frame end-to-end
 gaze from this camera is a dead end at this input resolution; it could only
 become competitive with a much higher-resolution source or a cropping-free
 foveation mechanism (e.g. learned zoom), both out of scope.
+
+---
+
+# UPDATE (2026-07-04): deploy-faithful calibration + MobileViT/Foveal variants + 10k-frame timing
+
+## Deploy-faithful raw calibration (support = OriginalCalib, SAME frame IDs as multistream; cm, 5-fold mean)
+| model | params | base | fcft@K9 | fcft@K72 | svrE@K72 |
+|---|---|---|---|---|---|
+| raw_mobile_vit (MobileViT-S) | 5.3M | 5.15 | 4.04 | **3.90** | 4.69 |
+| raw_vit (ViT-S/384) | 22.1M | 5.88 | 5.60 | 5.54 | 6.27 |
+| raw_foveal_vit (2-view ViT-S) | 22.3M | 6.36 | 5.85 | 5.69 | 6.13 |
+| *multistream reference (deploy-faithful, clean metacompare)* | 3.7M | 4.36 | ~3.4 | ~3.3 | 2.97 |
+
+- **raw_mobile_vit is the best raw model by far** (3.90 vs 5.54): conv inductive
+  bias beats global attention on the raw frame too — same law as the crop study.
+- **The fovea design failed** (6.36 base, worse than plain raw_vit): the fixed
+  top-center crop misses faces off-center; a learned localizer would be needed —
+  which is what facemesh already is.
+- Even the best raw model stays **~0.9-1.0 cm behind** the multistream leaders
+  under identical deploy-faithful calibration.
+
+## 10,000-frame inference time (user protocol; facemesh 70.0 s incl. decode; GPU b1 forwards)
+| pipeline | total s/10k | vs best raw |
+|---|---|---|
+| raw_vit | **26.4** | — |
+| raw_mobile_vit | 37.2 | — |
+| raw_foveal_vit | 52.7 | — |
+| facemesh + atto_binocular | 97.0 | +70.6 |
+| facemesh + binocular | 97.0 | +70.6 |
+| facemesh + face_only_mobile_vit | 107.4 | +81.0 |
+| facemesh + foveal_vit | 115.9 | +89.5 |
+| facemesh + mobile_vit | 181.9 | +155.5 |
+
+Raw pipelines save 70-155 s per 10k frames (7-16 ms/frame) — i.e., all pipelines
+run comfortably real-time (≥55 fps end-to-end even for the slowest). **The time
+saved does not buy back the 0.9-2.6 cm accuracy cost.** Verdict unchanged:
+facemesh+multistream wins; raw_mobile_vit is the only raw variant worth noting
+(a viable fallback where face detection is impossible).

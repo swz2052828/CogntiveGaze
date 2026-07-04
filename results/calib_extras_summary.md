@@ -32,3 +32,17 @@ do not transfer across subjects the way SVR HPs did; the Zhu defaults
 ## Recommendation
 Deploy fc_ft with Zhu defaults; add LOO auto-selection when K is small or the
 backbone's best method is unknown. Do not tune fc_ft HPs on training subjects.
+
+## #2 CORRECTED (re-run with fcft_def in the LOO menu, runs/calib_extras2)
+The original auto column selected among {fcft_TUNED, svr_embed, meta} — handicapped
+by #1's negative result. With the proper menu {fcft_def, svr_embed, meta}:
+
+| K | base | fcft_def | svr_embed | meta | **auto** | oracle |
+|---|---|---|---|---|---|---|
+| 9  | 4.706 | 3.707 | 3.836 | 4.057 | **3.601** | 3.199 |
+| 72 | 4.706 | 3.597 | 3.615 | 4.023 | **3.511** | 3.033 |
+
+**Upgraded verdict: LOO auto-selection beats every fixed method at BOTH K**
+(-0.11 @K9, -0.09 @K72 vs the best fixed method), capturing ~20%% of the oracle
+headroom. It is the only eval-side optimization with a positive cohort effect.
+Recommend as the default deployment calibrator-picker.
