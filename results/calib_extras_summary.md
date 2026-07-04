@@ -46,3 +46,19 @@ by #1's negative result. With the proper menu {fcft_def, svr_embed, meta}:
 (-0.11 @K9, -0.09 @K72 vs the best fixed method), capturing ~20%% of the oracle
 headroom. It is the only eval-side optimization with a positive cohort effect.
 Recommend as the default deployment calibrator-picker.
+
+## Better-selector attempt: cycle-CV — NEGATIVE (K=72, runs/calib_extras3)
+Hypothesis: validating across the two enrollment sweep cycles (fit cycle 1 → score
+cycle 2, both directions) better matches the calib→task temporal shift than 9-point
+LOO. Result: **auto_cv 3.614 vs auto(LOO) 3.515** — cycle-CV loses the entire LOO
+edge (worst on convnextv2: 4.57 vs 4.02, where it over-picked svr_embed).
+
+Diagnosis: a fit-set composition bias outweighs the validation-shift benefit. CV
+fits each candidate on 36 single-cycle frames, but the deployed method is fitted
+on all 72 two-cycle frames; methods that need both cycles' pose diversity (fc_ft,
+meta) are systematically under-scored, tilting selection toward svr_embed (picks:
+33 vs LOO's 24). LOO's 64-frame fits are near-identical to the deployed 72-frame
+fit, so despite noisier validation its selection is less biased. **Selector rule of
+thumb: keep the CV fit-set as close as possible to the deployed fit-set; accept
+validation noise over fit-set mismatch.** LOO auto stays the recommendation; the
+~0.48cm oracle gap remains open (untested: per-point outlier screening).
