@@ -194,9 +194,10 @@ def main():
 
         # ---- #2 eval per val rec ----
         acc = {k: [] for k in ("base", "fcft_def", "fcft_tuned", "svr_embed", "meta",
-                               "auto", "oracle",
+                               "auto", "auto_cv", "oracle",
                                "base_cl", "fcft_def_cl", "fcft_tuned_cl", "svr_embed_cl",
-                               "meta_cl", "auto_cl", "oracle_cl")}
+                               "meta_cl", "auto_cl", "auto_cv_cl", "oracle_cl")}
+        pick_cv = {}
         pick_count = {}
         dump_rows = []
         for rec, tq in rows_t.items():
@@ -242,10 +243,41 @@ def main():
             sel = min(loo, key=lambda m: np.mean(loo[m]))
             pick_count[sel] = pick_count.get(sel, 0) + 1
             preds["auto"] = preds[sel]
+
+            # cycle-CV selector: per point, first half of frames (by frame id) =
+            # cycle 1, second half = cycle 2; fit on one cycle, validate on the
+            # other (both directions). Validates across the temporal gap between
+            # cycles -- a closer proxy for the calib->task shift than LOO points.
+            if n >= 18:
+                fr_c = np.array([int(cds.samples[cidx_v[r]][-1]) for r in cs])
+                cyc1, cyc2 = [], []
+                for p9 in pts:
+                    ip = np.where(np.all(np.isclose(np.round(y_sup, 3), p9), axis=1))[0]
+                    o = ip[np.argsort(fr_c[ip])]
+                    h = len(o) // 2
+                    cyc1 += [sup[i] for i in o[:h]]
+                    cyc2 += [sup[i] for i in o[h:]]
+                cvres = {}
+                fits = (
+                    ("fcft_def", lambda s8, qp: _fc_ft_predict(
+                        base_model, b_mean, b_std, bfe, gz, s8, qp, device, **FCFT_DEFAULT)),
+                    ("svr_embed", lambda s8, qp: _svr_embed_predict(bee, gz, s8, qp, **svr_hp)),
+                    ("meta", lambda s8, qp: _meta_predict(
+                        (meta_model, adapter, mfe, m_mean, m_std), s8, qp, gz, device,
+                        args.inner_lr, args.inner_steps)))
+                for mname, fitfn in fits:
+                    e1 = err(fitfn(cyc1, cyc2), gz[cyc2].numpy())
+                    e2 = err(fitfn(cyc2, cyc1), gz[cyc1].numpy())
+                    cvres[mname] = 0.5 * (e1 + e2)
+                selcv = min(cvres, key=cvres.get)
+                pick_cv[selcv] = pick_cv.get(selcv, 0) + 1
+                preds["auto_cv"] = preds[selcv]
+            else:
+                preds["auto_cv"] = preds[sel]
             cand = ("fcft_def", "svr_embed", "meta")
             preds["oracle"] = preds[min(cand, key=lambda m: err(preds[m], gt_q))]
 
-            for name in ("base", "fcft_def", "fcft_tuned", "svr_embed", "meta", "auto", "oracle"):
+            for name in ("base", "fcft_def", "fcft_tuned", "svr_embed", "meta", "auto", "auto_cv", "oracle"):
                 acc[name].append(err(preds[name], gt_q))
                 acc[name + "_cl"].append(err(preds[name], gt_q, clean_mask))
 
@@ -261,7 +293,8 @@ def main():
 
         row = dict(fold=fold, K=K, seed=seed, backbone=bb,
                    fcft_lr=hp["lr"], fcft_steps=hp["steps"], fcft_wd=hp["weight_decay"],
-                   picks=";".join(f"{k}:{v}" for k, v in sorted(pick_count.items())))
+                   picks=";".join(f"{k}:{v}" for k, v in sorted(pick_count.items())),
+                   picks_cv=";".join(f"{k}:{v}" for k, v in sorted(pick_cv.items())))
         for k, v in acc.items():
             row[k] = float(np.mean(v)) if v else float("nan")
         out_rows.append(row)
