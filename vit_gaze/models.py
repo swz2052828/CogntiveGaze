@@ -65,10 +65,20 @@ class RawFrameViTGaze(nn.Module):
         import timm
 
         self.image_size = image_size
-        self.encoder = timm.create_model(
-            encoder_name, pretrained=(weights == "imagenet"),
-            num_classes=0, img_size=image_size)
-        hidden_dim = self.encoder.num_features
+        try:                                   # ViT-likes take img_size
+            self.encoder = timm.create_model(
+                encoder_name, pretrained=(weights == "imagenet"),
+                num_classes=0, img_size=image_size)
+        except TypeError:                      # fully-conv encoders: any size
+            self.encoder = timm.create_model(
+                encoder_name, pretrained=(weights == "imagenet"), num_classes=0)
+        # probe the true output dim (num_features can differ from the pre-logits
+        # dim for encoders with a conv_head, e.g. mobilenetv3)
+        self.encoder.eval()
+        with torch.no_grad():
+            pr = self.encoder(torch.zeros(1, 3, image_size, image_size))
+        hidden_dim = (pr.flatten(1) if pr.ndim > 2 else pr).shape[1]
+        self.encoder.train()
         if freeze_encoder:
             for p in self.encoder.parameters():
                 p.requires_grad = False
@@ -84,7 +94,8 @@ class RawFrameViTGaze(nn.Module):
 
     # -- calibration contract (mirrors MultistreamBackboneBase) --
     def forward_features(self, image):
-        return self.encoder(image)
+        f = self.encoder(image)
+        return f.flatten(1) if f.ndim > 2 else f     # some conv encoders skip pooling
 
     @property
     def readout(self):
@@ -98,7 +109,7 @@ class RawFrameViTGaze(nn.Module):
         return x
 
     def forward(self, image):
-        return self.head(self.encoder(image))
+        return self.head(self.forward_features(image))
 
 
 class RawFrameTimmGaze(RawFrameViTGaze):
@@ -206,6 +217,26 @@ from .multistream_backbones import (  # noqa: E402,F401
 )
 
 
+
+# Raw-frame variants of every adaptable study encoder (single 384/392px frame).
+# Excluded as structurally crop/grid-bound: eyes_only_*, face_only_*, binocular,
+# convnextv2_film (grid FiLM), convnextv2_dualenc (two streams).
+RAW_ENCODERS = {
+    "raw_convnext": "convnext_tiny",
+    "raw_convnextv2": "convnextv2_femto.fcmae_ft_in1k",
+    "raw_convnextv2_atto": "convnextv2_atto.fcmae_ft_in1k",
+    "raw_convnextv2_nano": "convnextv2_nano.fcmae_ft_in1k",
+    "raw_mobilenet_v3": "mobilenetv3_small_100.lamb_in1k",
+    "raw_mobilenet_v4": "mobilenetv4_conv_medium",
+    "raw_mobilevitv2": "mobilevitv2_100.cvnets_in1k",
+    "raw_repvit": "repvit_m1_0.dist_300e_in1k",
+    "raw_fastvit": "fastvit_t8.apple_in1k",
+    "raw_eva02": "eva02_small_patch14_224.mim_in22k",        # img 392
+    "raw_eva02_tiny": "eva02_tiny_patch14_224.mim_in22k",    # img 392
+    "raw_dinov2": "vit_small_patch14_dinov2.lvd142m",        # img 392
+    "raw_vit_b": "vit_base_patch16_384.augreg_in21k_ft_in1k",
+}
+
 def vivit_kwargs_from_args(args):
     """Extract vivit-specific kwargs from an argparse namespace (or a dict-like).
 
@@ -250,6 +281,10 @@ def create_model(
     elif input_mode == "raw" and backbone == "raw_vit":
         model = RawFrameViTGaze(weights=weights, freeze_encoder=freeze_encoder,
                                 image_size=image_size)
+    elif input_mode == "raw" and backbone in RAW_ENCODERS:
+        model = RawFrameTimmGaze(weights=weights, freeze_encoder=freeze_encoder,
+                                 image_size=image_size,
+                                 encoder_name=RAW_ENCODERS[backbone])
     elif input_mode == "raw" and backbone == "raw_mobile_vit":
         model = RawFrameTimmGaze(weights=weights, freeze_encoder=freeze_encoder,
                                  image_size=image_size)
