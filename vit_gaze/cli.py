@@ -33,6 +33,10 @@ def add_common_args(parser):
     parser.add_argument("--raw-folder", default="appleFace")
     parser.add_argument("--synthetic-folder", default="appleFaceFake")
     parser.add_argument("--image-size", type=int, default=224)
+    parser.add_argument(
+        "--flip-right-eye", action="store_true",
+        help="Mirror the right-eye crop horizontally so both (shared-weight) eye "
+             "towers see one canonical eye chirality (iTracker-style).")
     parser.add_argument("--allow-missing-synthetic", action="store_true")
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument(

@@ -211,7 +211,9 @@ class MultiStreamGazeDataset(data.Dataset):
         eye_size=224,
         grid_size=25,
         use_grid=False,
+        flip_right_eye=False,
     ):
+        self.flip_right_eye = flip_right_eye
         self.data_path = Path(data_path)
         self.eye_path = Path(eye_path) if eye_path is not None else self.data_path
         self.face_folder = face_folder
@@ -309,7 +311,9 @@ class MultiStreamGazeDataset(data.Dataset):
         item = {
             "face": self._load_image(face_p, self.image_size),
             "eye_left": self._load_image(left_p, self.eye_size),
-            "eye_right": self._load_image(right_p, self.eye_size),
+            "eye_right": (torch.flip(self._load_image(right_p, self.eye_size), dims=[-1])
+                          if self.flip_right_eye else
+                          self._load_image(right_p, self.eye_size)),
             "gaze": torch.from_numpy(gaze.copy()),
             "index": torch.tensor(idx, dtype=torch.long),
             "rec": torch.tensor(rec, dtype=torch.long),
@@ -401,6 +405,7 @@ def build_multistream_dataset(args):
         eye_size=getattr(args, "eye_size", 224),
         grid_size=getattr(args, "grid_size", 25),
         use_grid=getattr(args, "use_grid", False),
+        flip_right_eye=getattr(args, "flip_right_eye", False),
     )
 
 
