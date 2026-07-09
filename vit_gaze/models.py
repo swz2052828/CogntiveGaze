@@ -173,6 +173,38 @@ class RawFrameFovealGaze(nn.Module):
         return self.head(self.forward_features(image))
 
 
+class RawMultistreamWrapGaze(nn.Module):
+    """Universal raw adaptation for custom multistream CNNs (mgazenet, affnet,
+    itracker, cnn_transformer): the unchanged multistream architecture receives
+    the RAW frame as ALL THREE image streams (face = eyeL = eyeR = raw@224) and
+    a zero grid. No facemesh, no crops -- the towers must find the eyes in the
+    scene. Delegates forward_features/readout/calibration_feature."""
+
+    def __init__(self, backbone, weights="none", freeze_encoder=False, image_size=224):
+        super().__init__()
+        self.image_size = image_size
+        self.inner = build_multistream_backbone(
+            backbone=backbone, weights=weights, freeze_encoder=freeze_encoder,
+            use_grid=True, grid_size=25)
+        self.grid_len = 625
+
+    def _zero_grid(self, image):
+        return image.new_zeros(image.shape[0], self.grid_len)
+
+    def forward_features(self, image):
+        return self.inner.forward_features(image, image, image, self._zero_grid(image))
+
+    @property
+    def readout(self):
+        return self.inner.readout
+
+    def calibration_feature(self, feats):
+        return self.inner.calibration_feature(feats)
+
+    def forward(self, image):
+        return self.inner(image, image, image, self._zero_grid(image))
+
+
 class SingleFaceViTGaze(nn.Module):
     def __init__(self, weights="none", freeze_encoder=False):
         super().__init__()
@@ -281,6 +313,10 @@ def create_model(
     elif input_mode == "raw" and backbone == "raw_vit":
         model = RawFrameViTGaze(weights=weights, freeze_encoder=freeze_encoder,
                                 image_size=image_size)
+    elif input_mode == "raw" and backbone.startswith("raw_wrap_"):
+        model = RawMultistreamWrapGaze(backbone[len("raw_wrap_"):], weights=weights,
+                                       freeze_encoder=freeze_encoder,
+                                       image_size=image_size)
     elif input_mode == "raw" and backbone in RAW_ENCODERS:
         model = RawFrameTimmGaze(weights=weights, freeze_encoder=freeze_encoder,
                                  image_size=image_size,

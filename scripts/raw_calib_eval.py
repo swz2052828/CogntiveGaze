@@ -28,7 +28,8 @@ CALMETA = "/springbrook/share/eng/esrpxk/datasets/calib_support_K72/meanno7/meta
 RUN_OF = {"raw_vit": "meta_pipeline_clean_raw_vit_384",
           "raw_mobile_vit": "meta_pipeline_clean_raw_mobile_vit_384",
           "raw_foveal_vit": "meta_pipeline_clean_raw_foveal_vit_384"}
-for _bb in ("raw_convnext raw_convnextv2 raw_convnextv2_atto raw_convnextv2_nano "
+for _bb in ("raw_wrap_mgazenet raw_wrap_affnet raw_wrap_itracker raw_wrap_cnn_transformer "
+            "raw_convnext raw_convnextv2 raw_convnextv2_atto raw_convnextv2_nano "
             "raw_mobilenet_v3 raw_mobilenet_v4 raw_mobilevitv2 raw_repvit raw_fastvit "
             "raw_eva02 raw_eva02_tiny raw_dinov2 raw_vit_b").split():
     RUN_OF[_bb] = f"meta_pipeline_clean_{_bb}_384"
@@ -52,12 +53,14 @@ def main():
     task_ds = PairedFaceGazeDataset(
         data_path=DATA, mean_path="meanno7_clean", metadata_path=None,
         raw_root=RAW, synthetic_root=None, raw_folder="raw", synthetic_folder="synthetic",
-        image_size=(392 if bb in ("raw_eva02","raw_eva02_tiny","raw_dinov2") else 384),
+        image_size=(392 if bb in ("raw_eva02","raw_eva02_tiny","raw_dinov2")
+                    else 224 if bb.startswith("raw_wrap_") else 384),
         use_synthetic=False, require_synthetic=False)
     calib_ds = PairedFaceGazeDataset(
         data_path=DATA, mean_path="meanno7_clean", metadata_path=CALMETA,
         raw_root=CAL, synthetic_root=None, raw_folder="raw", synthetic_folder="synthetic",
-        image_size=(392 if bb in ("raw_eva02","raw_eva02_tiny","raw_dinov2") else 384),
+        image_size=(392 if bb in ("raw_eva02","raw_eva02_tiny","raw_dinov2")
+                    else 224 if bb.startswith("raw_wrap_") else 384),
         use_synthetic=False, require_synthetic=False)
 
     splits = recording_kfolds(task_ds.unique_recordings(), folds=5, seed=seed)
