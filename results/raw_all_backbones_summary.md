@@ -43,3 +43,15 @@ Multistream reference (deploy-faithful): leaders 2.94-2.97, fcft cohort ~3.3-3.6
    smartphone, reinforcing the real-time-on-device direction.
 4. **Calibration helps raw models only when base features work** (mobile family
    gains 0.9-1.2cm from fc_ft; the failed models gain ~0) — the familiar law.
+
+## Phase 2: custom multistream CNNs (raw@224 to all streams, zero grid)
+| raw backbone | params | base | fcft@K72 | svrE@K72 |
+|---|---|---|---|---|
+| raw_wrap_mgazenet | 3.0M | 8.63 | 7.72 | 7.06 |
+| raw_wrap_itracker | 6.3M | 9.69 | 8.16 | 7.33 |
+| raw_wrap_cnn_transformer | 3.3M | 8.24 | 8.42 | 8.16 |
+| raw_wrap_affnet | 3.0M | 9.83 | 8.50 | 7.83 |
+
+Above the predict-the-mean floor (9.4) but far behind the mobile family (3.9-4.6):
+crop-designed custom CNNs at their native 224px (eyes ~22px) cannot compete with
+modern mobile encoders at 384px. Completes the 20-variant raw sweep.
