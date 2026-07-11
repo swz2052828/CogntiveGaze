@@ -16,16 +16,20 @@ from vit_gaze.splits import recording_kfolds
 DATA = "/springbrook/share/eng/esrpxk/datasets/ProcessedData"
 SUPP = "/springbrook/share/eng/esrpxk/datasets"
 RUNS = Path("/springbrook/share/eng/esrpxk/runs")
-FLIP_ROOT = {  # backbone -> (clean run root, flip run root)
-    "itracker": ("meta_pipeline_clean_metacmp_itracker", "meta_pipeline_flip_itracker_lr1e4"),
-    "mgazenet": ("meta_pipeline_clean_metacmp_mgazenet", "meta_pipeline_flip_mgazenet_lr1e4"),
-    "eyes_only_mobilevitv2": ("meta_pipeline_clean_metacmp_eyes_only_mobilevitv2",
-                              "meta_pipeline_flip_eyes_only_mobilevitv2_lr1e4"),
-    "eyes_only_convnextv2_binocular": ("meta_pipeline_clean_metacmp_eyes_only_convnextv2_binocular",
-                                       "meta_pipeline_flip_eyes_only_convnextv2_binocular_lr1e4"),
-    "eyes_only_convnextv2_atto_binocular": ("meta_pipeline_clean_metacmp_eyes_only_convnextv2_atto_binocular",
-                                            "meta_pipeline_flip_eyes_only_convnextv2_atto_binocular_lr1e4"),
-}
+def _build_map():
+    """backbone -> (clean run root, flip run root), discovered from disk."""
+    import os, re
+    m = {}
+    for fd in glob.glob(str(RUNS / "meta_pipeline_flip_*")):
+        ck = glob.glob(f"{fd}/base/seed42/fold0_best_*_gaze_segmenter.pth")
+        if not ck:
+            continue
+        bb = os.path.basename(ck[0])[len("fold0_best_"):-len("_gaze_segmenter.pth")]
+        cd = os.path.basename(fd).replace("meta_pipeline_flip_", "meta_pipeline_clean_")
+        if (RUNS / cd / "base/seed42").is_dir():
+            m[bb] = (cd, os.path.basename(fd))
+    return m
+FLIP_ROOT = _build_map()
 
 def ds(root, flip):
     return MultiStreamGazeDataset(data_path=root, mean_path="meanno7_clean",
