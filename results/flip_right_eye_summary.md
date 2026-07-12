@@ -52,3 +52,19 @@ Cohort: mean +0.029, median +0.175, flip better 22/34
 - Cohort neutral (mean +0.03, median +0.18, 22/34) -> NOT adopted globally;
   selective adoption for shared-tower models only. Production leader
   (atto_binocular) unaffected (+0.08 = noise).
+
+## Calibrated comparison (fc_ft/svr_embed, deploy-faithful, all 33 evaluable backbones)
+Cohort fcft@K72: mean -0.327, median -0.123, flip better 12/33 -> **calibration
+REVERSES the verdict; flip is net-negative calibrated.**
+- Reversals: itracker +0.58 uncalib -> -1.92 calib (flip wrecks calibratability);
+  atto_binocular (leader) +0.08 -> -1.16 (binocular damage exposed);
+  femto binocular -1.67 -> -2.83 (feature damage amplifies).
+- Surviving winners (all eyes-only shared-tower + film): convnextv2_film +1.20,
+  eyes_only_mobilevitv2 +0.66, eyes_only_fastvit +0.66, eyes_only_mobilenet_v4
+  +0.64, eyes_only_convnextv2_atto +0.50, eyes_only_mobile_vit +0.47, mgazenet +0.46.
+- Mechanism: per-subject calibration exploits EYE-ASYMMETRY signal; the flip
+  destroys it (explicitly in binocular diff features, implicitly wherever the
+  refitted readout used cross-eye structure). Only pure eyes-only shared towers
+  keep the canonical-chirality gain.
+- FINAL: not adopted (harms leader); selective use only for eyes-only mobile family.
+- cnn_transformer_raw excluded (no forward_features contract).
