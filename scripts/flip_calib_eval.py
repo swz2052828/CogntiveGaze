@@ -49,8 +49,13 @@ def main():
     device = torch.device("cuda")
     bb, fold = a.backbone, a.fold_index
     out = dict(fold=fold, backbone=bb)
-    for arm, rootname, flip in (("clean", FLIP_ROOT[bb][0], False),
-                                ("flip", FLIP_ROOT[bb][1], True)):
+    arms = [("clean", FLIP_ROOT[bb][0], False),
+            ("flip", FLIP_ROOT[bb][1], True)]
+    fa = str(RUNS / f"meta_pipeline_flipadv_{FLIP_ROOT[bb][1][len('meta_pipeline_flip_'):]}")
+    import os as _os
+    if _os.path.isdir(fa + "/base/seed42"):
+        arms.append(("flipadv", _os.path.basename(fa), True))
+    for arm, rootname, flip in arms:
         ck = RUNS / rootname / f"base/seed42/fold{fold}_best_{bb}_gaze_segmenter.pth"
         model, mean, std = _load_base_checkpoint(str(ck), device)
         task = ds(DATA, flip)
