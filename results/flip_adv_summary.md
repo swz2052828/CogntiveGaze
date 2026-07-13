@@ -34,9 +34,11 @@ cl=clean baseline, fl=flip, fl_adv=flip+adversarial (base_adv under flip). fcft@
 | affnet | 5.79 | 5.40 | 4.69 | 5.31 | 6.16 | 5.99 |
 | convnextv2_film | 5.54 | 4.14 | 5.62 | 5.04 | 3.86 | 6.15 |
 | vit | 4.37 | 4.42 | 4.48 | 3.68 | 3.96 | 6.93 |
+| itracker | 5.93 | 5.34 | 5.63 | 4.82 | 6.74 | 7.32 |
 | dinov2 | 5.36 | 5.10 | 5.62 | 4.79 | 5.98 | 7.81 |
 | convnextv2_nano | 7.36 | 8.47 | 9.35 | 7.11 | 8.45 | 9.40 |
-| **COHORT MEAN** | 4.84 | 4.82 | 5.03 | 4.21 | 4.49 | 5.10 |
+| **COHORT MEAN** | 4.88 | 4.84 | 5.05 | 4.23 | 4.56 | 5.17 |
 
 ## Verdict
-Calibrated cohort worsens monotonically clean 4.21 -> flip 4.49 -> flip+adv 5.10. base_adv (uncalibrated) is a wash vs flip; adv's damage appears AFTER calibration (DANN subject-invariant features strip the per-subject signal calibration needs), worst for ViT-family (vit 3.96->6.93, dinov2 5.98->7.81). Best flip+adv = mobilenet_v4 3.63, still far behind the clean-baseline champion (atto_binocular/binocular 3.26). No arm beats the clean baseline. Flip+adv NOT adopted -- stacking two independently-harmful interventions compounds the harm.
+Calibrated cohort worsens monotonically clean 4.23 -> flip 4.56 -> flip+adv 5.17. base_adv (uncalibrated) is a wash vs flip; adv's damage appears AFTER calibration (DANN subject-invariant features strip the per-subject signal calibration needs), worst for ViT-family (vit 3.96->6.93, dinov2 5.98->7.81, itracker 6.74->7.32). Best flip+adv = mobilenet_v4 3.63, still far behind the clean-baseline champion (atto_binocular/binocular 3.26). No arm beats the clean baseline. Flip+adv NOT adopted -- stacking two independently-harmful interventions compounds the harm.
+(33 backbones; cnn_transformer_raw excluded -- no forward_features calib contract.)
