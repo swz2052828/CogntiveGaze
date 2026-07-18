@@ -125,13 +125,19 @@ def main():
     ecv, gcv, grcv = emb["c_va"]
     etv, gtv, grtv = emb["t_va"]
 
+    KS = (9, 18, 32, 36, 72)
+
     def val_err(C, gamma, eps, K):
         es = []
         for r, tq in grtv.items():
             cs = grcv.get(r)
             if not cs:
                 continue
-            sup_src = cs if K == 72 else cs[::8][:9]
+            if K >= len(cs):
+                sup_src = cs
+            else:                      # deterministic evenly-spaced subsample
+                sel = np.unique(np.linspace(0, len(cs) - 1, K).round().astype(int))
+                sup_src = [cs[i] for i in sel]
             n = len(sup_src)
             feats = torch.from_numpy(np.concatenate([ecv[sup_src], etv[tq]]))
             gz = torch.from_numpy(np.concatenate([gcv[sup_src], gtv[tq]]))
@@ -142,21 +148,23 @@ def main():
         return float(np.mean(es))
 
     rows = []
-    rows.append(dict(fold=fold, backbone=bb, method="fixed",
-                     C=1.0, gamma=-1.0, eps=0.1, fit_err=-1.0, tune_s=0.0,
-                     val_K9=val_err(1.0, "scale", 0.1, 9),
-                     val_K72=val_err(1.0, "scale", 0.1, 72)))
+    row = dict(fold=fold, backbone=bb, method="fixed",
+               C=1.0, gamma=-1.0, eps=0.1, fit_err=-1.0, tune_s=0.0)
+    for K in KS:
+        row[f"val_K{K}"] = val_err(1.0, "scale", 0.1, K)
+    rows.append(row)
     for opt in ("pso", "jaya", "mvo"):
         t0 = time.time()
         fitness = make_fitness(sup_by, qry_by, seed=a.seed + fold)
         bx, bf, _ = optimize(opt, fitness, DEFAULT_LB, DEFAULT_UB,
                              pop=a.pop, iters=a.iters, seed=a.seed + fold)
         C, gamma, eps = float(bx[0]), float(bx[1]), float(bx[2])
-        rows.append(dict(fold=fold, backbone=bb, method=opt,
-                         C=C, gamma=gamma, eps=eps, fit_err=float(bf),
-                         tune_s=round(time.time() - t0, 1),
-                         val_K9=val_err(C, gamma, eps, 9),
-                         val_K72=val_err(C, gamma, eps, 72)))
+        row = dict(fold=fold, backbone=bb, method=opt,
+                   C=C, gamma=gamma, eps=eps, fit_err=float(bf),
+                   tune_s=round(time.time() - t0, 1))
+        for K in KS:
+            row[f"val_K{K}"] = val_err(C, gamma, eps, K)
+        rows.append(row)
         print(rows[-1], flush=True)
 
     import csv
