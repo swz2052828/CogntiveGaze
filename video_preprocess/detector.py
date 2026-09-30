@@ -85,7 +85,13 @@ class VideoFaceDetector:
         min_tracking_confidence: float = 0.5,
     ):
         try:
-            from mediapipe.solutions.face_mesh import FaceMesh
+            try:
+                from mediapipe.solutions.face_mesh import FaceMesh
+            except ModuleNotFoundError:
+                # mediapipe >=0.10 only aliases `solutions` as an attribute of the
+                # top-level package, so the dotted submodule path can be absent.
+                import mediapipe as _mp
+                FaceMesh = _mp.solutions.face_mesh.FaceMesh
         except ImportError as exc:
             raise ImportError(
                 "mediapipe is required. Install with: pip install mediapipe"

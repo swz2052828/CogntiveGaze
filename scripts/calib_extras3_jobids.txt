@@ -1,0 +1,8 @@
+1170449 eyes_only_convnextv2_atto_binocular
+1170450 face_only_mobile_vit
+1170451 eyes_only_convnextv2_binocular
+1170452 mobile_vit
+1170453 convnextv2
+1170454 mobilenet_v3
+1170455 vit
+1170456 convnext

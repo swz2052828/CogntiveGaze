@@ -1,0 +1,16 @@
+1283734 rep1 itracker
+1283735 rep1 affnet
+1283736 rep1 mgazenet
+1283737 rep1 mobilenet_v3
+1283738 rep2 itracker
+1283739 rep2 affnet
+1283740 rep2 mgazenet
+1283741 rep2 mobilenet_v3
+1283742 rep3 itracker
+1283743 rep3 affnet
+1283744 rep3 mgazenet
+1283745 rep3 mobilenet_v3
+1283746 rep4 itracker
+1283747 rep4 affnet
+1283748 rep4 mgazenet
+1283749 rep4 mobilenet_v3

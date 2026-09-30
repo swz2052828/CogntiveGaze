@@ -23,6 +23,7 @@ sys.modules.setdefault("mediapipe.solutions", _sol)
 sys.modules.setdefault("mediapipe.solutions.face_mesh", _sol.face_mesh)
 import cv2
 from video_preprocess.detector import VideoFaceDetector
+from video_preprocess.orientation import open_upright
 from video_preprocess.bbox import bbox_from_points
 from video_preprocess.face_grid import face_grid_params
 
@@ -98,7 +99,12 @@ def main():
     mesh = VideoFaceDetector()
     meta = {K: [] for K in KS}
     for sub in sorted(uniq):
-        cap = cv2.VideoCapture(f"{VIDEOS}/subid_{sub}.mp4")
+        # open_upright, not VideoCapture: these files carry three different
+        # container rotation tags (90 for most, 0 for subid_12/19, 180 for
+        # subid_20) and OpenCV applies them or not depending on the build. The
+        # hard-coded ROT below is correct only when decoding starts from raw
+        # landscape pixels. See video_preprocess/orientation.py.
+        cap = open_upright(f"{VIDEOS}/subid_{sub}.mp4")
         cache = {fr: crop_frame(cap, mesh, fr) for fr in sorted(uniq[sub])}
         miss = [fr for fr, c in cache.items() if c is None]
         for (K, fr, sx, sy) in sel[sub]:

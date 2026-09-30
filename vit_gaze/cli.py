@@ -204,6 +204,18 @@ def build_parser():
     train_parser.add_argument("--weights", choices=("none", "imagenet"), default="none")
     train_parser.add_argument("--freeze-encoder", action="store_true")
     train_parser.add_argument(
+        "--init-checkpoint", default=None,
+        help=(
+            "Start from an existing checkpoint instead of --weights, i.e. "
+            "fine-tune rather than train from scratch. Accepts a literal path, "
+            "or a path containing {fold}, which is substituted with "
+            "--fold-index so one array job can fine-tune every fold from its "
+            "own matching source checkpoint. Loaded strictly: a shape or key "
+            "mismatch is an error, never a silent partial load, because a "
+            "partially-initialised model still trains and still produces "
+            "plausible numbers."
+        ))
+    train_parser.add_argument(
         "--output-activation",
         choices=("none", "scaled_tanh", "scaled_sin"),
         default="none",

@@ -1,0 +1,13 @@
+1171120 raw_convnext
+1171121 raw_convnextv2
+1171122 raw_convnextv2_atto
+1171123 raw_convnextv2_nano
+1171124 raw_mobilenet_v3
+1171125 raw_mobilenet_v4
+1171126 raw_mobilevitv2
+1171127 raw_repvit
+1171128 raw_fastvit
+1171129 raw_eva02
+1171130 raw_eva02_tiny
+1171131 raw_dinov2
+1171132 raw_vit_b

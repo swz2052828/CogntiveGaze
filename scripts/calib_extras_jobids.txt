@@ -1,0 +1,8 @@
+1170062 eyes_only_convnextv2_atto_binocular
+1170063 face_only_mobile_vit
+1170064 eyes_only_convnextv2_binocular
+1170065 mobile_vit
+1170066 convnextv2
+1170067 mobilenet_v3
+1170068 vit
+1170069 convnext

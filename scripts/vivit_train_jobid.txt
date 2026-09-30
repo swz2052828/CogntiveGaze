@@ -1,0 +1,1 @@
+1170058 vivit meta_pipeline_clean_vivit_lr1e4 batch16

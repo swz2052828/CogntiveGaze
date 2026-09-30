@@ -90,14 +90,32 @@ def main():
     ap.add_argument("--batch-size", type=int, default=128)
     ap.add_argument("--num-workers", type=int, default=16)
     ap.add_argument("--csv-out", required=True)
+    # Anonymisation arms. Defaults reproduce the original clean sweep exactly,
+    # so the 2026-07-19 result stays reproducible from this same file.
+    ap.add_argument("--data-root", default=DATA,
+                    help="task-data root; an anon/<op> root for the anonymised arms")
+    ap.add_argument("--calib-root", default=f"{SUPP}/calib_support_K72",
+                    help="enrolment root. For condition (iii) pass "
+                         "calib_support_K72_<op>, matching --data-root's operator: "
+                         "the tuner fits (C,gamma,eps) ON the support, so leaving it "
+                         "clean while deployment is anonymised tunes for the wrong "
+                         "distribution -- the same enrolment mismatch that invalidated "
+                         "the first condition (iii) run.")
+    ap.add_argument("--checkpoint", default=None,
+                    help="base checkpoint; defaults to the clean metacmp one")
+    ap.add_argument("--tag", default="", help="label written into the csv")
     a = ap.parse_args()
     device = torch.device("cuda")
     bb, fold = a.backbone, a.fold_index
 
-    ck = RUNS / FLIP_ROOT[bb][0] / f"base/seed42/fold{fold}_best_{bb}_gaze_segmenter.pth"
+    ck = (Path(a.checkpoint) if a.checkpoint else
+          RUNS / FLIP_ROOT[bb][0] / f"base/seed42/fold{fold}_best_{bb}_gaze_segmenter.pth")
+    if not Path(ck).is_file():
+        raise SystemExit(f"FATAL: no base checkpoint at {ck}")
     model, mean, std = _load_base_checkpoint(str(ck), device)
-    task = ds(DATA)
-    calib = ds(f"{SUPP}/calib_support_K72")
+    task = ds(a.data_root)
+    calib = ds(a.calib_root)
+    print(f"[{bb} fold{fold}] data={a.data_root} calib={a.calib_root}", flush=True)
     splits = recording_kfolds(task.unique_recordings(), folds=5, seed=a.seed)
     sp = [s for s in splits if s["fold"] == fold][0]
 
@@ -148,8 +166,9 @@ def main():
         return float(np.mean(es))
 
     rows = []
-    row = dict(fold=fold, backbone=bb, method="fixed",
-               C=1.0, gamma=-1.0, eps=0.1, fit_err=-1.0, tune_s=0.0)
+    row = dict(fold=fold, backbone=bb, tag=a.tag,
+               data_root=Path(a.data_root).name, calib_root=Path(a.calib_root).name,
+               method="fixed", C=1.0, gamma=-1.0, eps=0.1, fit_err=-1.0, tune_s=0.0)
     for K in KS:
         row[f"val_K{K}"] = val_err(1.0, "scale", 0.1, K)
     rows.append(row)
@@ -159,8 +178,9 @@ def main():
         bx, bf, _ = optimize(opt, fitness, DEFAULT_LB, DEFAULT_UB,
                              pop=a.pop, iters=a.iters, seed=a.seed + fold)
         C, gamma, eps = float(bx[0]), float(bx[1]), float(bx[2])
-        row = dict(fold=fold, backbone=bb, method=opt,
-                   C=C, gamma=gamma, eps=eps, fit_err=float(bf),
+        row = dict(fold=fold, backbone=bb, tag=a.tag,
+                   data_root=Path(a.data_root).name, calib_root=Path(a.calib_root).name,
+                   method=opt, C=C, gamma=gamma, eps=eps, fit_err=float(bf),
                    tune_s=round(time.time() - t0, 1))
         for K in KS:
             row[f"val_K{K}"] = val_err(C, gamma, eps, K)

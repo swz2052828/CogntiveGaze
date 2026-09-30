@@ -5,3 +5,11 @@ vit_gaze_segmenter_output/
 vit_gaze_segments/
 debug_inpaint_masks/
 .DS_Store
+
+# --- never commit: participant-identifying material ---
+# subject_attributes.csv carries the name<->recording mapping plus age, gender,
+# glasses and eye condition. It IS the identification key.
+results/subject_attributes.csv
+# BSREC amendment pack: institutional documents with named individuals,
+# signature fields and study protocol. Not code, not for a shared repo.
+results/ethics_amendment/

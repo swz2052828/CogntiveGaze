@@ -197,6 +197,42 @@ def train_one_fold(args, dataset, split, device, accelerator=None, use_accelerat
         image_size=getattr(args, "image_size", 224),
         **vivit_kwargs_from_args(args),
     )
+    init_ckpt = getattr(args, "init_checkpoint", None)
+    if init_ckpt:
+        # Fine-tune from an existing checkpoint. Done BEFORE .to(device) and
+        # before any compile wrapper, so the state dict keys are the plain
+        # module names the checkpoint was saved with.
+        src = Path(str(init_ckpt).format(fold=getattr(args, "fold_index", 0)))
+        if not src.is_file():
+            raise FileNotFoundError(f"--init-checkpoint not found: {src}")
+        ckpt = torch.load(str(src), map_location="cpu")
+        if not (isinstance(ckpt, dict) and "model" in ckpt):
+            raise ValueError(
+                f"{src} is not a checkpoint written by this trainer "
+                f"(expected a dict with a 'model' key, got "
+                f"{sorted(ckpt)[:6] if isinstance(ckpt, dict) else type(ckpt).__name__})")
+        sd = {k[len("_orig_mod."):] if k.startswith("_orig_mod.") else k: v
+              for k, v in ckpt["model"].items()}
+        model.load_state_dict(sd, strict=True)   # strict: raises on any mismatch
+        # The head predicts NORMALISED gaze, denormalised with the statistics of
+        # whatever fold trained it. Fine-tuning recomputes gaze_mean/std from
+        # this run's training split; if the source checkpoint was fitted against
+        # different statistics the head is silently miscalibrated by that shift,
+        # so refuse rather than absorb it into the fine-tune. Labels are
+        # unchanged by anonymisation, so a matching fold always agrees.
+        for name, cur in (("gaze_mean", gaze_mean), ("gaze_std", gaze_std)):
+            old = ckpt.get(name)
+            if old is None:
+                continue
+            delta = (old.float().cpu() - cur.float().cpu()).abs().max().item()
+            if delta > 1e-3:
+                raise ValueError(
+                    f"--init-checkpoint {src} was trained with {name}="
+                    f"{old.tolist()} but this split gives {cur.tolist()} "
+                    f"(max |diff| {delta:.4f}). Different target normalisation "
+                    f"means the loaded head is miscalibrated; use the "
+                    f"checkpoint for the SAME fold index.")
+        log(f"init from checkpoint: {src}")
     if not use_accelerate:
         model = model.to(device)
     if getattr(args, "compile", False):
