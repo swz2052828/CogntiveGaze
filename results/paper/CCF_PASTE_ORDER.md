@@ -150,8 +150,8 @@ dataset paper with de-identification attached.
 > transformation breaks per-participant consistency **and** the released crop
 > contains nothing outside the transformation's edit domain. Neither suffices:
 > resampling the synthetic identity every frame takes eye-ROI verification from
-> 63.2% to 2.04% and eye-ROI linkage from 0.795 to 0.148 — floor is 1.57% and
-> 0.089 — yet leaves face-crop linkage at 0.982, because hair, skin tone, head
+> 63.2% to 2.04% and eye-ROI linkage from 0.795 to 0.148 [0.10, 0.27] — floor
+> is 1.57% and 0.089, and the interval does not overlap any per-participant arm — yet leaves face-crop linkage at 0.982, because hair, skin tone, head
 > pose and crop geometry are never edited. This tells a dataset author what to
 > do, not merely what fails.
 >
@@ -430,7 +430,11 @@ axis before the utility table that it reframes.
 > themselves synthetic in the Full Synthetic arm. Linkage survives: **ARI
 > 0.68–0.79** at k = 18 for the two synthetic identities, against **0.84–0.85**
 > for unmodified eye ROIs and a floor of 0.089, with 79–86% of frames assigned to
-> the correct participant.
+> the correct participant. The subject-level 95% intervals of the synthetic and
+> unmodified arms overlap substantially (e.g. [0.59, 0.86] against [0.70, 0.96]
+> on the left eye), so replacement cannot be said to reduce eye-ROI linkage at
+> all; clustering variability across twenty KMeans initialisations is small
+> (SD 0.015–0.037), so single-fit point estimates are representative.
 >
 > **Nor is it an illumination artefact.** Single-session recording leaves the
 > imaging conditions — exposure, white balance, focus distance, the angle of the
@@ -512,8 +516,8 @@ TAR at FAR = 1e-3, ArcFace, with 95% subject-level bootstrap CI.
 | Right eye ROI, TAR (A1) | 62.2% [49.0, 84.6] | 1.8% [0.1, 5.7] | 1.1% [0.0, 4.8] | **62.2%** (unaltered) |
 | *Session-nuisance floor* | *1.6%* | *1.6%* | *1.6%* | *1.6%* |
 | Face ROI, ARI @ k=18 (A2) | 1.000 | 1.000 | 1.000 | 1.000 |
-| Left eye ROI, ARI @ k=18 (A2) | 0.844 | 0.684 | 0.737 | 0.844 (unaltered) |
-| Right eye ROI, ARI @ k=18 (A2) | 0.853 | 0.789 | 0.761 | 0.853 (unaltered) |
+| Left eye ROI, ARI @ k=18 (A2) | 0.844 [0.70, 0.96] | 0.684 [0.59, 0.86] | 0.737 [0.60, 0.88] | 0.844 (unaltered) |
+| Right eye ROI, ARI @ k=18 (A2) | 0.853 [0.73, 0.96] | 0.789 [0.64, 0.92] | 0.761 [0.62, 0.95] | 0.853 (unaltered) |
 | *Linkage floor* | *0.089* | *0.089* | *0.089* | *0.089* |
 
 ---
@@ -589,37 +593,53 @@ magnitude below the effect in every cell.
 Review point M2: a centimetre figure on its own does not say whether a protocol
 is usable. Anchor it to what each biomarker needs to resolve.
 
-At the 80–120 cm viewing distance of our protocol, the Real Data baseline of
-4.96–5.85 cm is **2.4–4.2°**. Hybrid's residual keeps it at **2.4–4.9°**; full
-synthesis moves it to **3.5–9.2°**.
+**Which number to anchor on.** Table 3 reports the uncalibrated `base` error,
+which is the right quantity for comparing *arms* — holding calibration out
+isolates the effect of the imagery. It is the wrong quantity for asking whether
+the instrument is clinically usable, because a deployed screening tool calibrates
+each user. With per-participant calibration the same four architectures reach
+**3.70–5.11 cm on real data**, which at the 80–120 cm viewing distance of our
+protocol is **1.8–3.7°**.
 
-| Biomarker | What it must resolve | Requirement | Verdict at 2.4–4.2° |
+| Biomarker | What it must resolve | Requirement | Verdict at 1.8–3.7° |
 |---|---|---|---|
 | Anti-saccade directional error | which hemifield the gaze went to | coarse: roughly half the stimulus eccentricity | **usable** |
 | Saccade latency | movement onset | one frame; 100°/s detection threshold [CITE: saccadethresh] | **usable** — measured bias −16.8 ms, under one 33 ms frame |
 | Search-task dispersion | spread over tens of cm | coarse | **usable** |
-| Fixation stability (BCEA) | healthy median 0.75–1.07 deg², i.e. a sub-degree ellipse [CITE: bcea] | < 0.5° | **below our noise floor** |
+| Fixation stability (BCEA) | healthy median 0.75–1.07 deg², a sub-degree ellipse [CITE: bcea] | < 0.5° | **below our noise floor** |
 | Peak saccade velocity | a 30–80 ms movement | ≥ 250 Hz sampling | **undersampled at 30 Hz** |
 
-> Two of the five biomarkers are already beyond this instrument at baseline, and
-> for a reason that de-identification cannot make better or worse: fixation
-> stability lives at a sub-degree scale our 2.4–4.2° error cannot reach, and peak
-> saccade velocity needs a sampling rate two orders above 30 Hz. The three that
-> do work are the coarse ones — hemifield discrimination, movement onset, and
-> large-scale dispersion.
->
-> That is what makes the utility axis interpretable. Hybrid leaves the instrument
-> in the same regime (2.4–4.9°), so the biomarkers that worked still work. Full
-> synthesis moves it to 3.5–9.2°, which is not a proportionate cost on a
-> continuum but a move out of the regime: at 9° the hemifield discrimination that
-> anti-saccade error depends on is no longer comfortably resolved. **The protocol
-> that keeps the measurement clinically usable is precisely the one that releases
-> the participant's own ocular biometrics.**
+> Two of the five biomarkers are beyond this instrument before de-identification
+> is considered, for reasons de-identification cannot change: fixation stability
+> lives at a sub-degree scale our error cannot reach, and peak saccade velocity
+> needs a sampling rate an order above 30 Hz. The three that do work are the
+> coarse ones — hemifield discrimination, movement onset, and large-scale
+> dispersion.
 
-For scale, webcam-based eye tracking validated on clinically relevant saccade and
-free-viewing paradigms reports about 1.42° mean error [CITE: webcamval] — better
-than our uncalibrated baseline, and a fair reminder that the numbers here are
-without per-participant calibration.
+Calibrated, per arm:
+
+| Arm | cm | angular (120 → 80 cm) |
+|---|---|---|
+| Real Data | 3.70–5.11 | 1.8–3.7° |
+| Hybrid (A / B) | 4.42–5.65 / 5.10–5.48 | 2.1–4.0° / 2.4–3.9° |
+| Full Synthetic (A / B) | 7.28–8.97 / 8.69–11.21 | 3.5–6.4° / 4.1–8.0° |
+
+> This is what makes the utility axis interpretable. Hybrid leaves the instrument
+> in the same regime (2.1–4.0° against a 1.8–3.7° baseline), so the biomarkers
+> that worked still work. Full synthesis moves it to 3.5–8.0°, which is not a
+> proportionate cost along a continuum but a move out of the regime: at 8° the
+> hemifield discrimination that anti-saccade error rate depends on is no longer
+> comfortably resolved. **The protocol that keeps the measurement clinically
+> usable is precisely the one that releases the participant's own ocular
+> biometrics.**
+
+**On comparing with the literature.** Webcam-based eye tracking validated on
+clinically relevant saccade and free-viewing paradigms reports about 1.42° mean
+error [CITE: webcamval]. That figure is obtained *after* careful per-user
+calibration, so the like-for-like comparison is against our calibrated 1.8–3.7°,
+not against the uncalibrated numbers in Table 3. On that basis the two sit in the
+same regime, with ours somewhat coarser. Quoting 1.42° beside an uncalibrated
+figure would overstate the gap.
 
 **To check with a clinician before submission:** the requirement column is
 derived from published normative ranges, not from a target diagnostic sensitivity

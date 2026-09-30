@@ -1,0 +1,19 @@
+{
+  "tag": "swap_t2_appleRightEye",
+  "source": "emb_ProcessedSwap2_appleRightEye.npz",
+  "n_frames": 2160,
+  "n_participants": 18,
+  "ari_point": 0.7610885879653337,
+  "ari_seed_mean": 0.7955110268998704,
+  "ari_seed_sd": 0.03698069030588409,
+  "ari_seed_min": 0.740232181031489,
+  "ari_seed_max": 0.8724889023878408,
+  "n_seeds": 20,
+  "ari_boot_mean": 0.7890244266259947,
+  "ari_boot_ci95": [
+    0.6173423721319913,
+    0.9498108635033597
+  ],
+  "frac_boot_above_point": 0.644,
+  "n_boot": 1000
+}
