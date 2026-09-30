@@ -11,11 +11,16 @@ as a point estimate. Two things are missing and a reviewer will ask for both:
                 n = 18 cohort rather than the n = 2160 frames, which are not
                 independent.
 
-On the bootstrap: a resample contains duplicated participants, so k is set to the
-number of DISTINCT participants drawn (about 11-12 of 18 on average). ARI is
-computed against the true labels of the resampled frames. This is the standard
-cluster-bootstrap construction and it makes the interval slightly conservative,
-which is the direction to err in.
+On the bootstrap: a resample contains duplicated participants. A duplicate is
+the SAME person with byte-identical embeddings, so it keeps its participant's
+label and k is the number of DISTINCT participants drawn (about 11-12 of 18).
+
+A first version gave each duplicate its own label. KMeans cannot split two
+identical copies of the same points into two clusters, so every duplicate was
+scored as an error by construction, and the resulting "interval" sat entirely
+BELOW the point estimate for all ten arms (e.g. 0.844 with CI [0.442, 0.700]).
+The guard below now reports where the point estimate falls in the bootstrap
+distribution and refuses to write an interval that excludes it.
 """
 import argparse
 import json
@@ -59,16 +64,25 @@ def main():
     for _ in range(args.n_boot):
         drawn = rng.choice(subs, size=n_sub, replace=True)
         idx, lbl = [], []
-        for j, s in enumerate(drawn):
+        for s in drawn:
             r = rows[s]
             idx.append(r)
-            lbl.append(np.full(len(r), j))          # duplicates are distinct clusters
+            lbl.append(np.full(len(r), subs.index(s)))   # a duplicate is the same person
         idx = np.concatenate(idx)
         lbl = np.concatenate(lbl)
         k = len(set(drawn.tolist()))
         boot.append(cluster_ari(X[idx], lbl, k, 0))
 
     b = np.asarray(boot)
+    lo, hi = float(np.percentile(b, 2.5)), float(np.percentile(b, 97.5))
+    frac_above = float((b > seed_vals[0]).mean())
+    # An unbiased bootstrap puts the point estimate inside its own interval.
+    # If it does not, the resampling is broken, and an interval must not be written.
+    if not (lo <= seed_vals[0] <= hi):
+        raise SystemExit(
+            f"[{args.tag}] BIASED BOOTSTRAP: point {seed_vals[0]:.3f} lies outside "
+            f"[{lo:.3f}, {hi:.3f}] ({frac_above:.2f} of replicates above it). "
+            f"Refusing to write an interval.")
     res = {
         "tag": args.tag, "source": str(Path(args.emb).name),
         "n_frames": int(len(X)), "n_participants": n_sub,
@@ -79,7 +93,8 @@ def main():
         "ari_seed_max": float(np.max(seed_vals)),
         "n_seeds": args.n_seeds,
         "ari_boot_mean": float(b.mean()),
-        "ari_boot_ci95": [float(np.percentile(b, 2.5)), float(np.percentile(b, 97.5))],
+        "ari_boot_ci95": [lo, hi],
+        "frac_boot_above_point": frac_above,
         "n_boot": args.n_boot,
     }
     print(json.dumps(res, indent=2))
