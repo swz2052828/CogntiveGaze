@@ -947,9 +947,12 @@ floor (1.57%), not "borrowed from panel a".
 3. **DECIDE** the title (§0).
 4. ~~**WAIT** for the initialisation-variance replication before pasting Table 3.~~
    Done (2026-09-20); Table 3 is final.
-5. **CHECK** the DeepPrivacy2 quotations and numbers (§3, §8: "does not prevent
-   recognition through identifiers outside the face"; Market1501 Rank-1 94.4 →
-   44.7, mask-out 45.5) against the WACV PDF — they were extracted from the
-   arXiv HTML by a tool.
+5. ~~**CHECK** the DeepPrivacy2 quotations and numbers against the WACV PDF.~~
+   Done 2026-10-08 against the CVF open-access version and its supplement: the
+   quotation (p. 1, "does not prevent recognition through identifiers outside
+   the face, including both primary (e.g. ears, gait) and secondary (e.g.
+   gender) identifiers"), Table 1 (R1 94.4 → 44.7, mask-out 45.5, mAP 82.5 →
+   8.5) and the attack setup (Appendix C: original query images against the
+   anonymised test images, i.e. our A1) all match.
 6. **DECIDE** whether to retrain iTracker under condition (i) (~8.5 h per fold ×
    5 folds × 8 arms) so Table 5 covers all four architectures.
