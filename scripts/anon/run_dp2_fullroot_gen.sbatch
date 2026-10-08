@@ -25,6 +25,11 @@ export OMP_NUM_THREADS=4
 export TORCH_HOME=/springbrook/share/eng/esrpxk/home_caches/torch
 export HF_HUB_OFFLINE=1
 export PYTHONWARNINGS=ignore
+export FVCORE_CACHE=/springbrook/share/eng/esrpxk/home_caches/fvcore
+# MODE=face (default, the original arm) or fullbody (FB_cse_mask_face; see
+# run_dp2_fullbody.sbatch and third_party/DP2_STATUS.md).
+MODE=${MODE:-face}
+if [ "$MODE" = fullbody ]; then PFX=ProcessedDP2fbfull; RTAG=fb_; else PFX=ProcessedDP2full; RTAG=; fi
 cd /springbrook/share/eng/esrpxk/CogntiveGaze
 
 MODES=(per_subject per_frame)
@@ -35,9 +40,9 @@ D=/springbrook/share/eng/esrpxk/datasets
 R=/springbrook/share/eng/esrpxk/results/anon_dp2/fullroot
 mkdir -p "$R"
 
-echo "########## DP2 full root  identity=$M  rec=$REC  $(date +%T)"
+echo "########## DP2 full root  mode=$MODE identity=$M  rec=$REC  $(date +%T)"
 /springbrook/share/eng/esrpxk/envs/dp2/bin/python scripts/anon/run_deepprivacy2.py \
-    --identity "$M" --truncation 1.0 --all-frames --resume --recs "$REC" \
-    --out-root "$D/ProcessedDP2full_$M" \
-    --report "$R/edit_domain_${M}_${REC}.json" || { echo "FAILED $M $REC"; exit 1; }
+    --mode "$MODE" --identity "$M" --truncation 1.0 --all-frames --resume --recs "$REC" \
+    --out-root "$D/${PFX}_$M" \
+    --report "$R/edit_domain_${RTAG}${M}_${REC}.json" || { echo "FAILED $M $REC"; exit 1; }
 echo "ALL_DONE $M $REC $(date +%T)"

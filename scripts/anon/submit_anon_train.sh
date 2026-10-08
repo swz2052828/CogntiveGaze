@@ -20,6 +20,17 @@
 # Phase 1: the three fast backbones only. iTracker (~8.5 h/fold) is phase 2.
 #   bash scripts/anon/submit_anon_train.sh swap            # SimSwap arms, now
 #   DEP=<jobid> bash scripts/anon/submit_anon_train.sh dp2 # DP2 arms, after build
+#   ... dp2fb                                              # DP2 full-body arms
+#
+# Environment knobs (all optional):
+#   REP=1..5      initialisation draw. 1 is the original run (runs/anon_train/<arm>);
+#                 2-5 go to runs/anon_train/rep<N>/<arm>. Same seed 42 = same
+#                 participant partition; weights are unseeded, so a repeat is a
+#                 new initialisation draw (see run_initvar_eval.sbatch).
+#   BACKBONES     default "affnet mgazenet mobilenet_v3"
+#   CPUS          cpus-per-task and DataLoader workers (default 16). Workers do
+#                 not change the recipe; 10 lets 15 jobs fit the 160-CPU QOS cap.
+#   NICE, TIME    scheduling only
 set -euo pipefail
 REPO=/springbrook/share/eng/esrpxk/CogntiveGaze
 D=/springbrook/share/eng/esrpxk/datasets
@@ -28,20 +39,26 @@ cd "$REPO"
 case "${1:?swap|dp2}" in
   swap) ARMS="swap1:ProcessedSwap swap1_oldeye:ProcessedSwap_oldeye swap2:ProcessedSwap2 swap2_oldeye:ProcessedSwap2_oldeye" ;;
   dp2)  ARMS="dp2s:ProcessedDP2full_per_subject dp2s_oldeye:ProcessedDP2full_per_subject_oldeye dp2f:ProcessedDP2full_per_frame dp2f_oldeye:ProcessedDP2full_per_frame_oldeye" ;;
-  *) echo "usage: $0 swap|dp2"; exit 1 ;;
+  dp2fb) ARMS="dp2fbs:ProcessedDP2fbfull_per_subject dp2fbs_oldeye:ProcessedDP2fbfull_per_subject_oldeye dp2fbf:ProcessedDP2fbfull_per_frame dp2fbf_oldeye:ProcessedDP2fbfull_per_frame_oldeye" ;;
+  *) echo "usage: $0 swap|dp2|dp2fb"; exit 1 ;;
 esac
 BACKBONES="${BACKBONES:-affnet mgazenet mobilenet_v3}"
+REP="${REP:-1}"
+CPUS="${CPUS:-16}"
+if [ "$REP" = 1 ]; then BASE_OUT="$RUNS"; else BASE_OUT="$RUNS/rep$REP"; fi
 JOBLIST="$REPO/scripts/anon/anon_train_jobids.txt"
 IDS=()
 for ARM in $ARMS; do
   TAG=${ARM%%:*}; ROOT=$D/${ARM#*:}
   for BB in $BACKBONES; do
-    OUT_ROOT="$RUNS/$TAG/$BB"; mkdir -p "$OUT_ROOT"
+    OUT_ROOT="$BASE_OUT/$TAG/$BB"; mkdir -p "$OUT_ROOT"
     JID=$(DATA_PATH="$ROOT" EYE_PATH="$ROOT" MEAN_PATH=meanno7_clean OUT_ROOT="$OUT_ROOT" \
           BACKBONE="$BB" OUTPUT_ACTIVATION=none GAZE_RANGE=4.0 LR=1e-4 EPOCHS=20 SEEDS=42 \
-          sbatch --parsable --array=0-4 --partition=gpu --job-name="at_${TAG}_${BB}" \
+          NUM_WORKERS="$CPUS" \
+          sbatch --parsable --array=0-4 --partition=gpu --cpus-per-task="$CPUS" \
+          --job-name="at${REP}_${TAG}_${BB}" ${NICE:+--nice=$NICE} ${TIME:+--time=$TIME} \
           ${DEP:+--dependency=afterok:$DEP} scripts/run_base_only_springbrook.sbatch)
-    echo "$JID $1 $TAG $BB" | tee -a "$JOBLIST"
+    echo "$JID $1 rep$REP $TAG $BB" | tee -a "$JOBLIST"
     IDS+=("$JID")
   done
 done

@@ -36,9 +36,9 @@ META_CKPT="$R/meta_pipeline_clean_metacmp_${BB}/meta_on_base_calib/seed42/fold${
 [ -f "$BASE_CKPT" ] || { echo "FATAL missing $BASE_CKPT"; exit 1; }
 [ -f "$META_CKPT" ] || { echo "FATAL missing $META_CKPT"; exit 1; }
 
-for ARM in none:ProcessedData \
-           dp2s:ProcessedDP2full_per_subject dp2s_oldeye:ProcessedDP2full_per_subject_oldeye \
-           dp2f:ProcessedDP2full_per_frame   dp2f_oldeye:ProcessedDP2full_per_frame_oldeye; do
+# ARMS (env) overrides the arm list, e.g. for the full-body roots.
+ARMS=${ARMS:-"none:ProcessedData dp2s:ProcessedDP2full_per_subject dp2s_oldeye:ProcessedDP2full_per_subject_oldeye dp2f:ProcessedDP2full_per_frame dp2f_oldeye:ProcessedDP2full_per_frame_oldeye"}
+for ARM in $ARMS; do
   TAG=${ARM%%:*}; DP=$D/${ARM#*:}
   [ -f "$DP/meanno7_clean/metadata.mat" ] || { echo "FATAL $TAG: no manifest"; continue; }
   echo "########## draw$DRAW $BB fold$FOLD $TAG $(date +%T)"

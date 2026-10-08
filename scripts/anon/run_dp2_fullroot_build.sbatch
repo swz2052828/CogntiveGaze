@@ -11,11 +11,12 @@
 #SBATCH --time=00:30:00
 #SBATCH --output=/springbrook/share/eng/esrpxk/logs/dp2_build_%j.log
 set -euo pipefail
+PFX=${PFX:-ProcessedDP2full}   # ProcessedDP2fbfull for the full-body roots
 D=/springbrook/share/eng/esrpxk/datasets
 RECS="00006 00007 00008 00009 00010 00011 00012 00013 00014 00015 00016 00017 00018 00019 00020 00021 00022 00023"
 BAD=""
 for M in per_subject per_frame; do
-  A=$D/ProcessedDP2full_$M
+  A=$D/${PFX}_$M
   for rec in $RECS; do
     for F in appleFace appleLeftEye appleRightEye; do
       H=$(ls "$A/$rec/$F" 2>/dev/null | wc -l); W=$(ls "$D/ProcessedData/$rec/$F" | wc -l)
@@ -26,7 +27,7 @@ done
 [ -n "$BAD" ] && { echo "FATAL short:$BAD"; exit 1; }
 
 for M in per_subject per_frame; do
-  A=$D/ProcessedDP2full_$M; H=${A}_oldeye
+  A=$D/${PFX}_$M; H=${A}_oldeye
   ln -sfn "$D/ProcessedData/meanno7_clean" "$A/meanno7_clean"
   mkdir -p "$H"; ln -sfn "$D/ProcessedData/meanno7_clean" "$H/meanno7_clean"
   for rec in $RECS; do

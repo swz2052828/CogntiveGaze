@@ -8,7 +8,10 @@
 # Condition (ii) (clean-trained, anonymised test) stays as Table 3's third column.
 # `meta` is meaningless here (seed42 clean adapter); read `base`.
 #
-# ARMS env selects the family; array index -> (arm, backbone, fold).
+# ARMS env selects the family; BBS env the backbones (default the three fast
+# ones); REP the initialisation draw (1 = runs/anon_train/<arm>, N>1 =
+# runs/anon_train/rep<N>/<arm>). Array index -> (arm, backbone, fold); submit
+# with --array=0-$((n_arms*n_bbs*5-1)).
 #SBATCH --job-name=at_eval
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -24,11 +27,14 @@ D=/springbrook/share/eng/esrpxk/datasets
 R=/springbrook/share/eng/esrpxk/runs
 OUT=$R/anon_train/eval; mkdir -p "$OUT/logs"
 read -ra A <<< "${ARMS:?}"
-BBS=(affnet mgazenet mobilenet_v3)
+read -ra BBS <<< "${BBS:-affnet mgazenet mobilenet_v3}"
+REP=${REP:-1}
+NB=${#BBS[@]}
 ID=$SLURM_ARRAY_TASK_ID
-ARM=${A[$(( ID / 15 ))]}; TAG=${ARM%%:*}; ROOT=$D/${ARM#*:}
-BB=${BBS[$(( (ID % 15) / 5 ))]}; FOLD=$(( ID % 5 ))
-BASE_CKPT="$R/anon_train/$TAG/$BB/base/seed42/fold${FOLD}_best_${BB}_gaze_segmenter.pth"
+ARM=${A[$(( ID / (NB * 5) ))]}; TAG=${ARM%%:*}; ROOT=$D/${ARM#*:}
+BB=${BBS[$(( (ID % (NB * 5)) / 5 ))]}; FOLD=$(( ID % 5 ))
+if [ "$REP" = 1 ]; then TR=$R/anon_train; SFX=""; else TR=$R/anon_train/rep$REP; SFX="_rep$REP"; fi
+BASE_CKPT="$TR/$TAG/$BB/base/seed42/fold${FOLD}_best_${BB}_gaze_segmenter.pth"
 META_CKPT="$R/meta_pipeline_clean_metacmp_${BB}/meta_on_base_calib/seed42/fold${FOLD}_meta_film_${BB}_gaze.pth"
 [ -f "$BASE_CKPT" ] || { echo "FATAL missing $BASE_CKPT"; exit 1; }
 for TEST in real:$D/ProcessedData anon:$ROOT; do
@@ -43,8 +49,8 @@ for TEST in real:$D/ProcessedData anon:$ROOT; do
     --fc-ft --fc-ft-steps 20 --fc-ft-lr 5e-5 --fc-ft-weight-decay 5e-4 \
     --k 72 --trials 1 --batch-size 128 --num-workers 8 \
     --fold-index $FOLD --seed 42 \
-    --csv-out "$OUT/at_${TAG}_${BB}_test${TT}.csv" \
-    --log-file "$OUT/logs/at_${TAG}_${BB}_test${TT}_f${FOLD}.log" \
+    --csv-out "$OUT/at_${TAG}_${BB}_test${TT}${SFX}.csv" \
+    --log-file "$OUT/logs/at_${TAG}_${BB}_test${TT}${SFX}_f${FOLD}.log" \
     || echo "FAILED $TAG $BB fold$FOLD test=$TT"
 done
 echo "ALL_DONE $TAG $BB fold$FOLD"
