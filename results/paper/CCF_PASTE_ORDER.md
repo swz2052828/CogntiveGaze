@@ -10,7 +10,10 @@ section, the action, and the text.
 
 Rationale, alternatives and the reviewer's-eye reasoning live in
 `CCF_SECTIONS.md`; this file is the paste copy. Numbers come from
-`runs/anon_swap_utility` (utility) and `results/anon_*` (privacy).
+`runs/anon_swap_utility` + `runs/initvar_utility` (utility, condition (ii)),
+`results/anon_dp2/util_table.json` (DeepPrivacy2, condition (ii)),
+`results/anon_train/table3_three_conditions.json` (condition (i), retrained) and
+`results/anon_*` (privacy).
 Citation markers are `[CITE: key]` — substitute EndNote entries.
 
 **Terminology:** *Real Data*, *Full Synthetic*, *Hybrid (Real Eyes)*,
@@ -35,7 +38,7 @@ against the 4.9–5.9 cm baselines in Table 3.
 
 ---
 
-## 1. Abstract — INSERT (266 words)
+## 1. Abstract — INSERT (~285 words)
 
 > Smartphone eye tracking moves oculomotor assessment out of the clinic, but what
 > it records is video of the participant's face — which is what blocks the
@@ -46,26 +49,30 @@ against the 4.9–5.9 cm baselines in Table 3.
 > We introduce CognitiveGaze: 18 participants, seven oculomotor tasks, recorded
 > simultaneously by a smartphone and an EyeLink 1000, so every smartphone frame
 > carries a physiological ground-truth gaze coordinate rather than a
-> screen-target label. Utility is measured by retraining four gaze architectures
-> on de-identified data. Privacy is measured on the released crops themselves,
-> with pretrained recognisers, two attacker models, and a control establishing
-> what "no identity signal" scores on single-session data.
+> screen-target label. Utility is measured by deploying four gaze architectures
+> on de-identified crops and by retraining three of them on the de-identified
+> release. Privacy is measured on the released crops themselves, with pretrained
+> recognisers, two attacker models, and a control establishing what "no identity
+> signal" scores on single-session data.
 >
 > The axes do not trade as assumed. Retaining the genuine ocular region recovers
-> 85–101% of the synthesis penalty in every architecture, leaving a residual of
-> +0.08 to +1.04 cm against 2.41–7.04 cm for full synthesis — yet those same
-> crops verify identity at
+> 85–101% of the synthesis penalty in every architecture, and 86–108% when the
+> models are retrained on the release — yet those same crops verify identity at
 > 62–80% TAR at FAR 1e-3 against a measured 1.6% floor, under two unrelated
 > recognisers. The pixels that make the protocol work are the pixels that
-> identify. Full synthesis does break the link to the real face, but an attacker
-> holding only the release still recovers exactly the right 18 people, and does
-> so from a 120 px ocular crop containing no hair, ears, clothing or face
-> outline. De-identification confined to inner-face texture therefore cannot make
-> a gaze corpus releasable. We state what such a release would require, and
-> report what our own tiered release leaks when measured rather than assumed.
+> identify. Full synthesis does break the link to the real face, but costs
+> 2.2–5.4 cm even after retraining, and an attacker holding only the release
+> still recovers exactly the right 18 people — from a 120 px ocular crop
+> containing no hair, ears, clothing or face outline. Removal by inpainting fares
+> worse: a model retrained on it is no better than predicting the screen centre.
+> Across a replacement and a removal method, the one configuration that breaks
+> linkage — repainting the whole person with a fresh identity every frame — is
+> one that discards the eyes. We state what a releasable gaze corpus would
+> require, and report what our own tiered release leaks when measured rather than
+> assumed.
 
-If the venue caps at 250: drop "seven oculomotor tasks" and the final clause
-about the tiered release.
+If the venue caps at 250: drop "seven oculomotor tasks", the sentence on removal
+by inpainting, and the final clause about the tiered release.
 
 ---
 
@@ -133,34 +140,45 @@ dataset paper with de-identification attached.
 > simultaneously the signal gaze estimation needs and the region that identifies
 > best per pixel. We show that the protocol which recovers accuracy does so by
 > releasing genuine ocular biometrics — recovering 85–101% of the synthesis
-> penalty in *every* architecture we test, because in every case what it restores
-> is the participant's own eye pixels — and that full synthesis,
+> penalty in *every* architecture we test, and 86–108% when the models are
+> retrained on the release, because in every case what it restores is the
+> participant's own eye pixels — and that full synthesis,
 > which does remove the correspondence to the real face, still leaves the corpus
 > exactly partitionable by individual. Because the residual channels —
 > illumination, skin tone, periocular geometry, crop scale — lie outside the edit
 > domain of inner-face replacement, the limit is structural rather than a defect
 > of one generator: we confirm it on a second family — DeepPrivacy2, which
-> *removes* identity by inpainting rather than replacing it, and touches 40% more
-> of the crop — and the released face crop is still exactly partitionable
-> (ARI 1.000).
+> *removes* identity by inpainting rather than replacing it, and in its face mode
+> touches 40% more of the crop — and the released face crop is still exactly
+> partitionable (ARI 1.000); so is it, near enough (0.982), when DeepPrivacy2
+> repaints the whole person but keeps each participant's synthetic identity fixed.
 >
 > **A tested, two-part condition for breaking release-only linkage.** Rather than
 > stopping at a negative result, we state the requirement as a falsifiable claim
 > and test it by construction. Release-only linkage falls only when **both** the
 > transformation breaks per-participant consistency **and** the released crop
-> contains nothing outside the transformation's edit domain. Neither suffices:
-> resampling the synthetic identity every frame takes eye-ROI verification from
-> 63.2% to 2.04% and eye-ROI linkage from 0.795 to 0.148 [0.10, 0.27] — floor
-> is 1.57% and 0.089, and the interval does not overlap any per-participant arm — yet leaves face-crop linkage at 0.982, because hair, skin tone, head
-> pose and crop geometry are never edited. This tells a dataset author what to
-> do, not merely what fails.
+> contains nothing outside the transformation's edit domain. We test it as a 2×2
+> — face-only vs full-body DeepPrivacy2, fixed vs per-frame identity — and only
+> the cell that meets both halves breaks: face-crop linkage is 1.000, 0.982 and
+> 0.982 in the other three cells and **0.297** in that one, where an attacker who
+> does not know the cohort size recovers no structure at all (ARI 0.000). On the
+> eye ROI, which contains only edited pixels, per-frame identity alone suffices:
+> verification 63.2% → 2.04% and linkage 0.805 [0.63, 0.94] → 0.148
+> [0.10, 0.27], against floors of 1.57% and 0.089. The one configuration that
+> breaks linkage repaints the eyes, and a gaze model retrained on repainted eyes
+> does no better than predicting the screen centre. This tells a dataset author
+> what to do, and what it costs, not merely what fails.
 >
 > **CognitiveGaze, and a four-architecture utility benchmark under
 > de-identification.** 18 participants, smartphone and EyeLink 1000 recorded
 > simultaneously across seven oculomotor tasks. We report the utility cost of
-> both de-identification protocols across four architectures, paired at
-> participant level, including a face-only positive control that isolates whether
-> a model's ocular stream is active at all.
+> both de-identification protocols, for two de-identification families, under
+> three conditions — trained on real data and deployed on the de-identified
+> crops, and retrained on the de-identified release then tested on real or on
+> de-identified faces — against a measured initialisation noise floor and a
+> predict-the-mean reference that marks where a model has learned no gaze at
+> all, including a face-only positive control that isolates whether a model's
+> ocular stream is active at all.
 
 ---
 
@@ -181,18 +199,23 @@ dataset paper with de-identification attached.
 > *removal*. The k-Same family guarantees that a released face cannot be matched
 > to fewer than k enrolled identities by replacing faces with averages
 > [CITE: newton05], and its neural successors extend the guarantee to generated
-> faces [CITE: ksamenet]. DeepPrivacy and DeepPrivacy2 inpaint the facial region
-> with a conditional generator, preserving pose and background
-> [CITE: deepprivacy, deepprivacy2]; CIAGAN conditions the generation so that
+> faces [CITE: ksamenet]. DeepPrivacy inpaints the facial region with a
+> conditional generator, preserving pose and background [CITE: deepprivacy];
+> DeepPrivacy2 extends inpainting to the whole body, on the argument that face
+> anonymisation leaves identifiers outside the face, and evaluates it by
+> re-identifying anonymised pedestrians from original images [CITE: deepprivacy2]; CIAGAN conditions the generation so that
 > expression and pose survive while identity does not [CITE: ciagan]; more recent
 > work removes identity in diffusion latent space, including training-free
 > variants [CITE: fluid, apl]. Face *swapping* methods such as SimSwap and
 > SimSwap++ instead optimise identity *replacement* [CITE: simswap, simswappp].
-> The distinction matters for gaze: removal methods that inpaint the ocular
-> region destroy the signal the task depends on, whereas replacement preserves
-> the underlying geometry. Our finding is that the difference in objective does
-> not decide the outcome, because the leakage we measure lies outside the edit
-> domain that both families share.
+> The distinction is expected to matter for gaze: removal methods that inpaint
+> the ocular region should destroy the signal the task depends on, whereas
+> replacement is meant to preserve the underlying geometry. We measure both
+> expectations. The first holds outright — a gaze model retrained on inpainted
+> eyes learns nothing — but the second only partly: synthetic eyes keep enough
+> geometry to cost 2–5 cm rather than everything. On the privacy axis the
+> difference in objective does not decide the outcome, because the leakage we
+> measure lies outside the edit domain that both families share.
 >
 > **Face swapping as a privacy mechanism.** Swapping has accordingly been
 > proposed for exactly our setting. Yang et al. build a face-swap pipeline for
@@ -457,6 +480,33 @@ axis before the utility table that it reframes.
 > originals. A release that does not normalise crop photometry is linkable
 > without any recogniser at all.
 >
+> **A second family, and its strongest mode.** DeepPrivacy2 removes identity by
+> inpainting rather than replacing it. Its face mode repaints the detected face
+> box and touches 40% more of the crop than SimSwap; its full-body mode — the
+> paper's main contribution, motivated by exactly our concern that face
+> anonymisation leaves identifiers outside the face [CITE: deepprivacy2] —
+> repaints the whole person, face included. Crossing edit domain with identity
+> regime gives the two-part condition as a factorial result (face-crop T1 ARI at
+> k = 18, floor 0.089):
+>
+> | Edit domain | Fixed identity per participant | Fresh identity per frame |
+> |---|---|---|
+> | DeepPrivacy2, face | 1.000 | 0.982 |
+> | DeepPrivacy2, full body | 0.982 | **0.297** |
+>
+> Widening the edit domain alone changes nothing, and neither does resampling the
+> identity alone; only both together break the partition, and then an attacker
+> who must discover the cohort size finds none (silhouette selects k = 2,
+> ARI 0.000; pair AUC 0.78). The full-body generator works at 288×160, so its
+> faces are visibly low-resolution — but the fixed-identity full-body arm carries
+> the same degradation and still links at 0.982, so the collapse is due to the
+> identity regime, not to image quality. The residual 0.297 is well above floor:
+> what the whole-person generator leaves untouched — background, pose, crop
+> geometry, illumination — still carries part of the partition. Against A1 every
+> DeepPrivacy2 arm is at or below floor (≤ 1.2%), consistent with DeepPrivacy2's
+> own re-identification evaluation, which, like A1, matches enrolment images to
+> the release and does not test release-only linkage.
+>
 > The residual channels the recogniser does exploit — skin tone, periocular
 > geometry, crop scale — are signals gaze estimation reads, which is why the axis
 > trades at all.
@@ -524,9 +574,31 @@ TAR at FAR = 1e-3, ArcFace, with 95% subject-level bootstrap CI.
 
 ## 9. Privacy-Utility Experiments — REPLACE Table 3, ADD Table 4, DELETE a claim
 
-### 9a. Table 3 — REPLACE entirely
+### 9-pre. Utility protocol — INSERT at the head of the section
 
-Mean over 5 folds, then **mean ± SD over 5 independent initialisations**. Impact
+> **Three conditions.** A utility number answers a question only once it says who
+> trained the model on what. We report three. In **condition (ii)**, models
+> trained on real data are deployed on de-identified crops: the cost to a
+> pipeline that receives de-identified input. In **condition (i)**, models are
+> retrained on the de-identified release, with the same recipe, participant
+> partition and hyperparameters as the real-data models, and tested either on
+> **real faces** — a third party training on the released corpus and deploying
+> the model on its own users — or on **de-identified faces** — benchmarking on
+> the release itself. Condition (ii) is the only one that can separate
+> information loss from domain shift when read alongside (i): a penalty that
+> retraining removes was shift; one that survives retraining was information.
+>
+> Two references bound every number. The **initialisation noise floor** is the
+> spread of the real-data model over five independent initialisations,
+> 0.04–0.20 cm. The **no-information reference** is the error of predicting the
+> training participants' mean gaze point for every frame: **9.37 cm**, a penalty
+> of +3.70 to +4.41 cm depending on the backbone's own baseline. A model at that
+> level has learned no gaze.
+
+### 9a. Table 3 — REPLACE entirely (condition (ii))
+
+Condition (ii): trained on real data, deployed on de-identified crops. Mean over
+5 folds, then **mean ± SD over 5 independent initialisations**. Impact
 is relative to that model's own Real Data baseline. Replication design and the
 three checked timeouts are in `results/INITVAR_VALIDATION.md`.
 
@@ -542,6 +614,26 @@ whole comparison: **0.04–0.20 cm on the baseline**. Any claimed difference
 smaller than that cannot be supported in either direction. (The current draft
 reports ±0.03 cm differences as "Preserved"; they are an order of magnitude below
 this floor.)
+
+### 9a-bis. DeepPrivacy2 under condition (ii) — ADD as extra columns of Table 3, or as Table 3b
+
+Same models, same five initialisations, same harness. Before any DeepPrivacy2
+number was written, the real-data arm was re-run through the same job and
+reproduced Table 3 to within 0.0012 cm on all 100 folds.
+
+| Model | Full Synthetic (fixed) | Hybrid (fixed) | Full Synthetic (per frame) | Hybrid (per frame) |
+|---|---|---|---|---|
+| iTracker | 16.44 ± 0.24 (+10.58) | **5.75 ± 0.11 (−0.10)** | 17.50 ± 0.25 (+11.65) | **5.83 ± 0.06 (−0.02)** |
+| MobileNet-V3 Large | 15.88 ± 0.37 (+10.90) | **6.02 ± 0.54 (+1.03)** | 16.24 ± 0.23 (+11.25) | **5.95 ± 0.45 (+0.97)** |
+| AFFNet | 19.33 ± 0.26 (+13.66) | **5.74 ± 0.24 (+0.07)** | 20.52 ± 0.22 (+14.85) | **5.68 ± 0.22 (+0.01)** |
+| MGazeNet | 17.06 ± 0.39 (+12.09) | **5.43 ± 0.38 (+0.47)** | 17.04 ± 0.53 (+12.08) | **5.37 ± 0.32 (+0.40)** |
+
+"Fixed" and "per frame" are the identity regimes of §8 (DeepPrivacy2 face mode,
+truncation 1.0). Hybrid recovers 91–101% of the penalty, as with SimSwap. The
+Full Synthetic errors of 15.9–20.5 cm are **worse than predicting the mean**
+(9.37 cm): a real-data model given repainted eyes is confidently wrong. Read
+these columns with Table 5: most of this penalty is domain shift, and what is
+left after retraining is the no-information level.
 
 ### 9b. Table 4 — ADD (new)
 
@@ -587,6 +679,70 @@ magnitude below the effect in every cell.
 > penalty. What distinguishes the Hybrid protocol is not fusion topology but
 > whether the model reads the eye crops at all, as the face-only control makes
 > explicit.
+
+### 9c-ter. Table 5 and text — ADD (training on the release, condition (i))
+
+Penalty in cm against each model's own real-data baseline: mean over MobileNet-V3
+Large, AFFNet and MGazeNet, [min, max] across the three. Condition (ii) is
+recomputed over the same three backbones so the columns are comparable.
+Condition (i) is one initialisation per cell (iTracker, ~8.5 h per fold, was not
+retrained). Same recipe and participant partition as the real-data models.
+
+| Arm | (ii) train real, test de-id | (i) train de-id, test real | (i) train de-id, test de-id |
+|---|---|---|---|
+| SimSwap A, Full Synthetic | +2.95 [+2.41, +3.66] | +3.80 [+2.19, +4.61] | +2.82 [+2.27, +3.39] |
+| SimSwap A, Hybrid | **+0.20** [+0.18, +0.24] | **+0.12** [−0.02, +0.31] | **+0.06** [−0.01, +0.16] |
+| SimSwap B, Full Synthetic | +5.26 [+3.98, +7.04] | +4.38 [+3.39, +5.42] | +2.52 [+2.22, +2.90] |
+| SimSwap B, Hybrid | **+0.53** [+0.08, +1.04] | **+0.11** [−0.16, +0.31] | **−0.02** [−0.23, +0.16] |
+| DeepPrivacy2 fixed, Full Synthetic | +12.22 [+10.90, +13.66] | +4.64 [+3.99, +5.03] | +4.51 [+3.96, +4.86] |
+| DeepPrivacy2 fixed, Hybrid | **+0.52** [+0.07, +1.03] | **−0.11** [−0.21, −0.03] | **−0.15** [−0.20, −0.07] |
+| DeepPrivacy2 per frame, Full Synthetic | +12.73 [+11.25, +14.85] | +4.43 [+3.77, +4.92] | +4.37 [+3.79, +4.74] |
+| DeepPrivacy2 per frame, Hybrid | **+0.46** [+0.01, +0.97] | **+0.01** [−0.07, +0.06] | **−0.02** [−0.10, +0.03] |
+| *No-information reference (predict the mean)* | *+4.17 [+3.70, +4.41]* | | |
+
+> **Retraining does not rescue full synthesis.** For SimSwap, the penalty
+> survives retraining: +2.2 to +3.4 cm when the retrained model is tested on the
+> release, and +2.2 to +5.4 cm when it is deployed on real faces — where two of
+> the three architectures end up at or beyond the no-information reference. The
+> synthesis penalty in Table 3 is therefore mostly lost information, not domain
+> shift: a model cannot learn from synthetic eyes what synthetic eyes do not
+> carry. A Full Synthetic release is of little use to a third party who wants a
+> gaze model for real users.
+>
+> **Removal by inpainting leaves no gaze signal at all.** For DeepPrivacy2 the
+> picture is the reverse. Most of the condition (ii) penalty *is* domain shift —
+> retraining removes about two thirds of it — but what remains is the
+> no-information level. No retrained model, in any fold, under either identity
+> regime or on either test set, does better than predicting the mean (60 of 60
+> fold-level errors at or above it, by 0.0 to 1.7 cm); 18 of the 30 training runs
+> reach their best validation error at the first epoch and learn nothing
+> thereafter, and per-participant calibration does not help. The repainted eyes
+> carry no recoverable gaze information. This replaces the qualitative
+> observation that the generator "alters gaze direction" with a measurement.
+>
+> **Hybrid recovers the penalty in every condition.** Restoring the genuine
+> ocular ROIs recovers 86–104% of the penalty when the retrained model is
+> deployed on real faces and 93–108% on the release, for both families and both
+> identity regimes; every Hybrid cell in condition (i) lies within ±0.31 cm of
+> baseline, most inside the initialisation noise floor. The central utility
+> finding of Table 4 therefore does not depend on how the model was trained.
+>
+> **The identity regime costs little; the edit domain costs everything.** Once
+> models are trained on the release, resampling the synthetic identity every
+> frame changes utility by at most 0.31 cm against a fixed identity, in either
+> direction, for both Full Synthetic and Hybrid (in condition (ii) the Full
+> Synthetic arm moves by up to 1.2 cm, but there both regimes are already worse
+> than predicting the mean). What destroys utility is repainting the eyes — and
+> repainting everything the crop contains, eyes included, is what §8 found
+> necessary to break face-crop linkage.
+
+Caveats to keep beside Table 5: one initialisation per cell, so differences under
+about 0.4 cm (twice the noise floor) are not findings, and Hybrid's negative
+values read as "indistinguishable from baseline". Fold 2 is hard for every model,
+real-data included (7.3–8.5 cm), which compresses all penalties there; tested
+on the release, the SimSwap Full Synthetic penalty is positive in 29 of 30
+fold-level cells (2 templates × 3 backbones × 5 folds, against the 5-draw
+real-data fold mean).
 
 ### 9c-bis. What the cost means — INSERT after 9c
 
@@ -672,15 +828,17 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 
 > Neither protocol yields a corpus that can be released without further control.
 > Full synthesis removes the link to the real face at a gaze cost of 2.41–7.04
-> cm; Hybrid recovers 85–101% of that penalty — at a small residual cost of +0.08
-> to +1.04 cm — but only at the price of releasing genuine ocular biometrics; and both leave
-> the corpus linkable by participant, so one labelled example compromises a
-> cluster. The linkage is structural rather than incidental: it survives on a
+> cm, a cost that retraining on the release does not remove (+2.2 to +5.4 cm);
+> inpainting the face removes the gaze signal outright, leaving retrained models
+> no better than predicting the mean. Hybrid recovers 85–101% of the penalty —
+> 86–108% after retraining — but only at the price of releasing genuine ocular
+> biometrics; and both protocols leave the corpus linkable by participant, so one
+> labelled example compromises a cluster. The linkage is structural rather than incidental: it survives on a
 > 120 px ocular crop containing none of the contextual cues a face crop carries,
 > and the channels that carry it are the channels gaze estimation reads, so any
 > method whose edit domain is inner-face texture inherits the limit.
 >
-> Four constraints bound these conclusions. Participants were recorded in a
+> Five constraints bound these conclusions. Participants were recorded in a
 > single session. We attacked the resulting confound directly — photometric
 > normalisation and a large within-session illumination change both leave the
 > linkage intact — so the recogniser is not exploiting imaging conditions. But
@@ -695,13 +853,25 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > and recruited from a single institution, so we make no claim about clinical
 > populations and describe the contribution as an evaluation of dataset release
 > rather than of home screening. Privacy is measured with two recogniser
-> families, both trained on web-scale face corpora. And the structural claim is
-> demonstrated on one replacement method with two templates; methods with a wider
-> edit domain remain to be tested, and are the obvious next experiment.
+> families, both trained on web-scale face corpora. The structural claim is
+> tested on one replacement method (two templates) and one removal method in two
+> modes; diffusion-based de-identification is untested. Full-body DeepPrivacy2
+> ran without its generator for persons that DensePose fails to map (the weights
+> are no longer distributed); no such person occurred in our frames, but on other
+> footage that path would leave people unedited. Retraining on the release was
+> run for three of the four architectures and one initialisation per cell, so
+> it supports the direction and rough size of each penalty, not differences
+> below about 0.4 cm; and the utility of full-body DeepPrivacy2 was not
+> measured — it repaints the eyes at lower resolution than the face mode whose
+> eyes already carry no gaze signal, so we treat the no-information level as its
+> lower bound rather than report a number.
 >
 > A deployable route must satisfy both halves of the condition we establish:
-> resample the synthetic identity per recording session, *and* crop the release
-> down to the region the transformation actually edits. Our per-frame experiment
+> resample the synthetic identity per recording session, *and* ensure the release
+> contains nothing the transformation does not edit — by cropping to the edit
+> domain, or by widening the edit domain to the whole person, which is the one
+> configuration we found that breaks face-crop linkage (0.297), and which also
+> repaints the eyes. Our per-frame experiment
 > demonstrates the mechanism but is not itself deployable — it destroys the
 > temporal coherence a gaze pipeline needs — and per-session resampling is
 > precisely what a single-session corpus cannot evaluate. The alternative of
@@ -715,17 +885,58 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 
 ## 11. Figures
 
-| Figure | File | Shows |
-|---|---|---|
-| Two attackers | `fig3_threat_models.pdf` | same crops, A1 vs A2, 0.2% → 43% |
+All in `results/paper/figs_core/` (PNG + PDF), generated from result files by
+`scripts/anon/make_core_figs.py`; no number is typed in by hand.
 
-One privacy figure fits the page budget, and this is the one: it carries "a
-privacy number without its threat model is uninterpretable" in a single column.
-`fig5_linkage_release_only.pdf` (two panels, face crop and eye crop) and
-`fig1_periocular_leakage.pdf` are the journal-version figures.
+| Figure | File | Shows | Placement |
+|---|---|---|---|
+| Privacy–utility plane | `fig_core3_tradeoff.pdf` | every arm on one plane; the "private and useful" corner is empty | **main text, the one privacy figure** (§9, after Table 5) |
+| Release-only linkage | `fig_core1_privacy.pdf` | (a) the 2×2 on the face crop; (b) eye-ROI linkage with CIs | main text if a second figure fits (§8); otherwise supplement |
+| Utility under three conditions | `fig_core2_utility.pdf` | Full Synthetic vs Hybrid penalty, (ii) / (i)-real / (i)-de-id | supplement; Table 5 carries the numbers |
+| Two attackers | `fig3_threat_models.pdf` | same crops, A1 vs A2, 0.2% → 43% | supplement (was the main privacy figure) |
 
-Figure 5b's caption should now read the measured eye-native floor (1.57%), not
-"borrowed from panel a".
+The plane replaces the threat-model figure in the main text: it carries the
+paper's conclusion in one panel, where the threat-model figure carries a
+methodological point that §7 already makes in prose.
+`fig5_linkage_release_only.pdf` and `fig1_periocular_leakage.pdf` remain
+journal-version figures; fig 5b's caption should read the measured eye-native
+floor (1.57%), not "borrowed from panel a".
+
+**Caption, privacy–utility plane.**
+
+> **Privacy against utility for every protocol tested.** Horizontal: gaze-error
+> penalty of a model retrained on the release and deployed on real faces (mean
+> of three architectures). Vertical: release-only linkage, the ARI at k = 18 of
+> the most linkable crop the release contains (face or eye ROI). Circles: Full
+> Synthetic; squares: Hybrid (original eyes); star: unprocessed data. Dashed
+> red: no-information reference (predicting the mean gaze point); dashed grey:
+> linkage floor. The shaded corner — private and useful — contains no protocol.
+> Hybrid sits at the utility of real data and the linkage of real data; Full
+> Synthetic loses most of the gaze signal and none of the linkage. The single
+> point that leaves the top row (diamond: DeepPrivacy2 full body with a fresh
+> identity per frame, ARI 0.297) repaints the eyes; its utility was not measured
+> and is drawn at the no-information level as a lower bound.
+
+**Caption, release-only linkage.**
+
+> **(a)** Face-crop linkage (ARI at k = 18) for DeepPrivacy2, crossing edit
+> domain (face box vs whole person) with identity regime (fixed per participant
+> vs fresh per frame). Only the cell that meets both halves of the condition
+> falls (0.297); unprocessed and SimSwap face crops are at 1.000. **(b)** Eye-ROI
+> linkage for every arm, with 95% subject-level bootstrap intervals; dashed: the
+> eye-native floor (0.089). Every arm with a fixed identity per participant
+> overlaps unprocessed eyes; only per-frame identity approaches the floor.
+
+**Caption, utility under three conditions.**
+
+> **(a)** Full Synthetic and **(b)** Hybrid penalty against each model's
+> real-data baseline, for models trained on real data and tested on
+> de-identified crops (grey), and models retrained on the release and tested on
+> real (green) or de-identified (purple) faces. Bars: mean of three
+> architectures; dots: each architecture. Red band: no-information reference;
+> grey band: initialisation noise floor. Retraining removes most of the
+> DeepPrivacy2 penalty but stops at the no-information level; it does not remove
+> SimSwap's; Hybrid is at baseline in every condition.
 
 ---
 
@@ -734,4 +945,11 @@ Figure 5b's caption should now read the measured eye-native floor (1.57%), not
 1. **CHECK** whether *Practical Digital Disguises* runs a linkage attack (§3).
 2. **CHECK** the cohort count and demographics (§4).
 3. **DECIDE** the title (§0).
-4. **WAIT** for the initialisation-variance replication before pasting Table 3.
+4. ~~**WAIT** for the initialisation-variance replication before pasting Table 3.~~
+   Done (2026-09-20); Table 3 is final.
+5. **CHECK** the DeepPrivacy2 quotations and numbers (§3, §8: "does not prevent
+   recognition through identifiers outside the face"; Market1501 Rank-1 94.4 →
+   44.7, mask-out 45.5) against the WACV PDF — they were extracted from the
+   arXiv HTML by a tool.
+6. **DECIDE** whether to retrain iTracker under condition (i) (~8.5 h per fold ×
+   5 folds × 8 arms) so Table 5 covers all four architectures.

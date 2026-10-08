@@ -33,7 +33,21 @@ DATA = Path("/springbrook/share/eng/esrpxk/datasets")
 DP2 = Path("/springbrook/share/eng/esrpxk/third_party/deep_privacy2")
 
 
-def build_anonymiser(cfg_name="configs/anonymizers/face.py"):
+CONFIGS = {
+    "face": "configs/anonymizers/face.py",
+    # DP2's full pipeline: Mask R-CNN + CSE (DensePose) person detection, the
+    # whole person repainted by the CSE-guided FDH generator. Faces lying inside
+    # a detected person are DROPPED by CSeMaskFaceDetector, so on our
+    # single-person frames the face is repainted by the BODY generator; the face
+    # generator is only a fallback for frames with no person found.
+    # person_G (styleganL_nocse, for persons CSE misses) is unobtainable -- its
+    # host returns 410 Gone -- so it is set to None and such persons are left
+    # UNTOUCHED. That case is counted per frame, never passed off as protected.
+    "fullbody": "configs/anonymizers/FB_cse_mask_face.py",
+}
+
+
+def build_anonymiser(cfg_name="configs/anonymizers/face.py", drop_person_G=False):
     """The generator config path inside the anonymiser config is relative
     ("configs/fdf/stylegan.py"), so it only resolves with the repo as CWD."""
     import os
@@ -46,6 +60,8 @@ def build_anonymiser(cfg_name="configs/anonymizers/face.py"):
     os.chdir(DP2)
     try:
         cfg = LazyConfig.load(str(DP2 / cfg_name))
+        if drop_person_G:
+            cfg.anonymizer.person_G_cfg = None
         anonymiser = instantiate(cfg.anonymizer)
     finally:
         os.chdir(cwd)
@@ -60,6 +76,14 @@ def main():
     ap.add_argument("--n-per-subject", type=int, default=150,
                     help="frames per participant; the linkage attack uses 120")
     ap.add_argument("--limit-subjects", type=int, default=0)
+    ap.add_argument("--all-frames", action="store_true",
+                    help="every frame in the geometry table, in order: the full "
+                         "root the gaze models are evaluated on (Table 3 arm). "
+                         "Overrides --n-per-subject.")
+    ap.add_argument("--recs", nargs="+", default=None,
+                    help="only these recordings (one per array task)")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip frames whose three crops already exist")
     ap.add_argument("--report", default=None, help="edit-domain report json")
     ap.add_argument("--truncation", type=float, default=1.0,
                     help="StyleGAN truncation. The generator computes "
@@ -76,17 +100,23 @@ def main():
                          "a fresh identity every frame, which is the fix our "
                          "falsifiable claim predicts (break per-participant "
                          "consistency and release-only linkage should collapse).")
+    ap.add_argument("--mode", default="face", choices=sorted(CONFIGS),
+                    help="face: DP2's face anonymiser (the arm used so far). "
+                         "fullbody: DP2's full-body pipeline (FB_cse_mask_face).")
     args = ap.parse_args()
 
     import torch
 
-    anonymiser, tops = build_anonymiser()
+    anonymiser, tops = build_anonymiser(CONFIGS[args.mode],
+                                        drop_person_G=args.mode == "fullbody")
     out_root = Path(args.out_root)
     geo_dir = Path(args.geometry)
     rng = np.random.default_rng(0)
 
     edit = {}
     recs = sorted(p.stem for p in geo_dir.glob("*.npz"))
+    if args.recs:
+        recs = [r for r in recs if r in set(args.recs)]
     if args.limit_subjects:
         recs = recs[: args.limit_subjects]
 
@@ -99,10 +129,16 @@ def main():
 
         src_dir = DATA / "OriginalData" / rec
         avail = [n for n in names if (src_dir / n).is_file()]
-        if len(avail) < args.n_per_subject:
-            print(f"  {rec}: only {len(avail)} original frames, skipping", flush=True)
-            continue
-        pick = sorted(rng.choice(avail, size=args.n_per_subject, replace=False).tolist())
+        if args.all_frames:
+            if len(avail) < len(names):
+                raise SystemExit(f"{rec}: {len(names) - len(avail)} geometry frames "
+                                 f"have no original -- a full root would be short")
+            pick = names
+        else:
+            if len(avail) < args.n_per_subject:
+                print(f"  {rec}: only {len(avail)} original frames, skipping", flush=True)
+                continue
+            pick = sorted(rng.choice(avail, size=args.n_per_subject, replace=False).tolist())
 
         for fld in ("appleFace", "appleLeftEye", "appleRightEye"):
             (out_root / rec / fld).mkdir(parents=True, exist_ok=True)
@@ -110,7 +146,15 @@ def main():
         # Deterministic per-participant latent seed, stable across runs.
         subj_seed = int(rec) * 100003 % (2**31)
         diffs = []
+        # Frames where the detector finds no face come out UNCHANGED. In a
+        # utility arm those are original pixels and flatter the method, so they
+        # are counted and reported rather than silently passed through.
+        undetected = []
+        paths = {}   # detection type -> frames in which it fired
         for n in pick:
+            if args.resume and all((out_root / rec / f / n).is_file()
+                                   for f in ("appleFace", "appleLeftEye", "appleRightEye")):
+                continue
             frame = cv2.imread(str(src_dir / n))
             if frame is None:
                 continue
@@ -124,13 +168,23 @@ def main():
             # template exactly, and None draws a fresh identity per frame.
             with torch.no_grad():
                 out = t
+                n_det = 0
                 for det in anonymiser.detector(out):
+                    if len(det) == 0:
+                        continue
+                    kind = type(det).__name__
+                    paths.setdefault(kind, []).append(n)
+                    # Only detections with a generator are actually edited.
+                    if anonymiser.generators.get(type(det)) is not None:
+                        n_det += len(det)
                     z = (None if args.identity == "per_frame"
                          else np.full(len(det), subj_seed, dtype=np.int64))
                     out = anonymiser.anonymize_detections(
                         out, det, z_idx=z,
                         multi_modal_truncation=False, amp=True,
                         truncation_value=args.truncation)
+            if n_det == 0:
+                undetected.append(n)
             an = cv2.cvtColor(out.permute(1, 2, 0).cpu().numpy().astype(np.uint8),
                               cv2.COLOR_RGB2BGR)
 
@@ -145,8 +199,14 @@ def main():
                 cv2.imwrite(str(out_root / rec / fld / n), crop)
 
         edit[rec] = dict(n=len(diffs), mean_abs_diff=float(np.mean(diffs)) if diffs else None,
+                         n_undetected=len(undetected), undetected=undetected,
+                         mode=args.mode,
+                         detections={k: len(v) for k, v in paths.items()},
+                         unedited_person_frames=sorted(set(paths.get("PersonDetection", []))),
                          identity=args.identity, truncation=args.truncation)
-        print(f"  {rec}: {len(diffs)} frames, mean |delta| = {edit[rec]['mean_abs_diff']:.2f}",
+        md = edit[rec]['mean_abs_diff']
+        print(f"  {rec}: {len(diffs)} frames, mean |delta| = "
+              f"{md if md is None else round(md, 2)}, undetected = {len(undetected)}",
               flush=True)
 
     if args.report:
