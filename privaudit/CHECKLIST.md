@@ -57,7 +57,9 @@ to the edit domain or widen the edit domain to everything the crop contains.
 of the condition. Per-participant-consistent replacement removes the link to the
 real face and leaves the release internally self-consistent, i.e. exactly
 partitionable (face-crop ARI 1.000). Only resampling the identity *and* meeting
-C6 broke linkage in our 2×2 (0.297). Per-frame resampling breaks temporal
+C6 broke linkage in our 2×2 (ARI 0.297) — and even then an attacker holding a few
+labelled frames per person still verified 36% of them: the condition stops
+discovery, not verification. Run both attacks (R2 and R3). Per-frame resampling breaks temporal
 coherence; per-session resampling is the deployable form, and a single-session
 corpus cannot verify it.
 

@@ -20,7 +20,8 @@ import numpy as np
 RES = Path("/springbrook/share/eng/esrpxk/results")
 OUT = RES / "paper" / "figs_core"
 OUT.mkdir(parents=True, exist_ok=True)
-FLOOR_ARI = 0.089
+FLOOR_ARI = 0.089       # face pipeline, face-free patch (t1bg_p120)
+FLOOR_EYE_ARI = 0.074   # eye-native: privaudit floor on the eye-crop frame sample
 MEAN_PRED = 9.37      # cm, predict-the-training-mean, averaged over the 5 folds
 BBS = ["mobilenet_v3", "affnet", "mgazenet"]
 BB_LABEL = {"mobilenet_v3": "MobileNet-V3", "affnet": "AFFNet", "mgazenet": "MGazeNet"}
@@ -87,14 +88,26 @@ fig, (a, b) = plt.subplots(1, 2, figsize=(10.5, 4.4),
                            gridspec_kw={"width_ratios": [1, 1.6]})
 M = np.array([[face[("face", "fixed")], face[("face", "frame")]],
               [face[("body", "fixed")], face[("body", "frame")]]])
+# release-only verification on the same face crops (privaudit, TAR at FAR 1e-3)
+PV = RES / "privaudit_validate"
+def face_tar(case):
+    v = j(f"privaudit_validate/{case}/audit.json")["streams"]["appleFace"]["verification"]
+    return v["TAR@FAR=0.001"], v.get("TAR@FAR=0.001_ci95")
+TAR = [[face_tar("ProcessedDP2t1_per_subject"), face_tar("ProcessedDP2t1_per_frame")],
+       [face_tar("ProcessedDP2fb_per_subject"), face_tar("ProcessedDP2fb_per_frame")]]
 im = a.imshow(M, cmap="Reds", vmin=0, vmax=1)
 for r in range(2):
     for c in range(2):
-        a.text(c, r, f"{M[r, c]:.3f}", ha="center", va="center", fontsize=13,
-               fontweight="bold", color="white" if M[r, c] > 0.6 else "black")
+        col = "white" if M[r, c] > 0.6 else "black"
+        a.text(c, r - 0.08, f"ARI {M[r, c]:.3f}", ha="center", va="center", fontsize=12,
+               fontweight="bold", color=col)
+        t, ci = TAR[r][c]
+        a.text(c, r + 0.17, f"verif. {t:.1%}" + (f"\n[{ci[0]:.0%}, {ci[1]:.0%}]" if ci else ""),
+               ha="center", va="center", fontsize=8.5, color=col)
 a.set_xticks([0, 1], ["fixed identity\nper participant", "fresh identity\nper frame"])
 a.set_yticks([0, 1], ["DP2 face mode\n(edits face box)", "DP2 full body\n(edits whole person)"])
-a.set_title(f"(a) Face-crop linkage, ARI @ k=18 (floor {FLOOR_ARI})\n"
+a.set_title(f"(a) Face crop, DeepPrivacy2: linkage ARI (floor {FLOOR_ARI})\n"
+            f"and verification TAR@1e-3 (floor 1.6%)\n"
             f"original {face_orig:.3f}, SimSwap A/B {face_simswap[0]:.3f}/{face_simswap[1]:.3f}, "
             f"FAMS {face_fams[0]:.3f}/{face_fams[1]:.3f}", fontsize=9)
 for s in a.spines.values():
@@ -109,8 +122,9 @@ for off, e, col in ((-0.15, "appleLeftEye", "#1f77b4"), (0.15, "appleRightEye", 
     hi = np.array([eye[n][e][1][1] for n in names])
     b.errorbar(pts, y + off, xerr=[pts - lo, hi - pts], fmt="o", color=col, ms=5,
                capsize=2, label="left eye" if e == "appleLeftEye" else "right eye")
-b.axvline(FLOOR_ARI, color="grey", ls="--", lw=1)
-b.text(FLOOR_ARI + 0.01, y[-1] - 0.55, "floor", color="grey", fontsize=8)
+b.axvline(FLOOR_EYE_ARI, color="grey", ls="--", lw=1)
+b.text(FLOOR_EYE_ARI + 0.01, y[-1] - 0.55, f"eye-native floor {FLOOR_EYE_ARI}", color="grey",
+       fontsize=8)
 b.set_yticks(y, names)
 b.set_xlim(0, 1.02)
 b.set_xlabel("ARI @ k=18 (95% subject-bootstrap CI)")

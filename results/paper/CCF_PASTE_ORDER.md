@@ -161,11 +161,14 @@ dataset paper with de-identification attached.
 > — face-only vs full-body DeepPrivacy2, fixed vs per-frame identity — and only
 > the cell that meets both halves breaks: face-crop linkage is 1.000, 0.982 and
 > 0.982 in the other three cells and **0.297** in that one, where an attacker who
-> does not know the cohort size recovers no structure at all (ARI 0.000). On the
-> eye ROI, which contains only edited pixels, per-frame identity alone suffices:
-> verification 63.2% → 2.04% and linkage 0.805 [0.63, 0.94] → 0.148
-> [0.10, 0.27], against floors of 1.57% and 0.089. The one configuration that
-> breaks linkage repaints the eyes, and a gaze model retrained on repainted eyes
+> does not know the cohort size recovers no structure at all (ARI 0.000). It
+> breaks *discovery*, not *verification*: an attacker holding a few labelled
+> frames per person still verifies 35.7% [17, 52] of that cell's face crops,
+> against 90–100% in the other three and a 1.6% floor. On the eye ROI, which
+> contains only edited pixels, per-frame identity alone suffices: verification
+> 63.2% → 2.04% and linkage 0.805 [0.63, 0.94] → 0.148 [0.10, 0.27], against
+> floors of 1.57% and 0.074. The one configuration that breaks linkage repaints
+> the eyes, and a gaze model retrained on repainted eyes
 > does no better than predicting the screen centre. This tells a dataset author
 > what to do, and what it costs, not merely what fails.
 >
@@ -487,13 +490,14 @@ axis before the utility table that it reframes.
 > paper's main contribution, motivated by exactly our concern that face
 > anonymisation leaves identifiers outside the face [CITE: deepprivacy2] —
 > repaints the whole person, face included. Crossing edit domain with identity
-> regime gives the two-part condition as a factorial result (face-crop T1 ARI at
-> k = 18, floor 0.089):
+> regime gives the two-part condition as a factorial result, on the face crop,
+> for both release-only attacks (linkage: ARI at k = 18, floor 0.089;
+> verification: TAR at FAR 1e-3 with 95% subject-level interval, floor 1.6%):
 >
 > | Edit domain | Fixed identity per participant | Fresh identity per frame |
 > |---|---|---|
-> | DeepPrivacy2, face | 1.000 | 0.982 |
-> | DeepPrivacy2, full body | 0.982 | **0.297** |
+> | DeepPrivacy2, face | ARI 1.000 · TAR 100% | ARI 0.982 · TAR 89.7% [84, 100] |
+> | DeepPrivacy2, full body | ARI 0.982 · TAR 99.9% | **ARI 0.297 · TAR 35.7% [17, 52]** |
 >
 > Widening the edit domain alone changes nothing, and neither does resampling the
 > identity alone; only both together break the partition, and then an attacker
@@ -501,9 +505,12 @@ axis before the utility table that it reframes.
 > ARI 0.000; pair AUC 0.78). The full-body generator works at 288×160, so its
 > faces are visibly low-resolution — but the fixed-identity full-body arm carries
 > the same degradation and still links at 0.982, so the collapse is due to the
-> identity regime, not to image quality. The residual 0.297 is well above floor:
+> identity regime, not to image quality. Both residuals are well above floor:
 > what the whole-person generator leaves untouched — background, pose, crop
-> geometry, illumination — still carries part of the partition. Against A1 every
+> geometry, illumination — still carries part of the partition, and enough
+> identity for an attacker with templates to verify a third of the frames. The
+> condition blocks *discovery* of who is who; it does not stop *verification* by
+> someone who already holds a few labelled frames. Against A1 every
 > DeepPrivacy2 arm is at or below floor (≤ 1.2%), consistent with DeepPrivacy2's
 > own re-identification evaluation, which, like A1, matches enrolment images to
 > the release and does not test release-only linkage.
@@ -914,8 +921,8 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > resample the synthetic identity per recording session, *and* ensure the release
 > contains nothing the transformation does not edit — by cropping to the edit
 > domain, or by widening the edit domain to the whole person, which is the one
-> configuration we found that breaks face-crop linkage (0.297), and which also
-> repaints the eyes. Our per-frame experiment
+> configuration we found that breaks face-crop linkage (0.297, though
+> verification survives at 36%), and which also repaints the eyes. Our per-frame experiment
 > demonstrates the mechanism but is not itself deployable — it destroys the
 > temporal coherence a gaze pipeline needs — and per-session resampling is
 > precisely what a single-session corpus cannot evaluate. The alternative of
@@ -965,12 +972,13 @@ floor (1.57%), not "borrowed from panel a".
 
 **Caption, release-only linkage.**
 
-> **(a)** Face-crop linkage (ARI at k = 18) for DeepPrivacy2, crossing edit
-> domain (face box vs whole person) with identity regime (fixed per participant
-> vs fresh per frame). Only the cell that meets both halves of the condition
-> falls (0.297); unprocessed and SimSwap face crops are at 1.000. **(b)** Eye-ROI
-> linkage for every arm, with 95% subject-level bootstrap intervals; dashed: the
-> eye-native floor (0.089). Every arm with a fixed identity per participant
+> **(a)** Face crop, DeepPrivacy2, crossing edit domain (face box vs whole
+> person) with identity regime (fixed per participant vs fresh per frame):
+> linkage (ARI at k = 18) and verification (TAR at FAR 1e-3, 95% subject-level
+> interval). Only the cell that meets both halves of the condition falls (ARI
+> 0.297), and verification there is still 36%. Unprocessed and SimSwap face crops
+> are at 1.000; FAMS at 0.939 / 0.853. **(b)** Eye-ROI linkage for every arm, with
+> 95% subject-level bootstrap intervals; dashed: the eye-native floor (0.074). Every arm with a fixed identity per participant
 > overlaps unprocessed eyes; only per-frame identity approaches the floor.
 
 **Caption, utility under three conditions.**
