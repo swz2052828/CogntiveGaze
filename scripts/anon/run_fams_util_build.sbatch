@@ -23,6 +23,10 @@ PY=/springbrook/share/eng/esrpxk/envs/gaze/bin/python
 
 $PY scripts/anon/make_subset_manifest.py --root "$A" --src-mean meanno7_clean --out-mean $M
 ln -sfn "$D/ProcessedData/$M" "$A/$M"
+# metacompare looks for the calibration support under the same manifest name;
+# calibration frames are a separate pre-task recording, independent of how the
+# task frames are subsampled (same pattern as meanno7_clean_sub1200)
+ln -sfn meanno7_clean "$D/calib_support_K72/$M"
 
 $PY - <<EOF
 import scipy.io as sio, numpy as np, os, sys

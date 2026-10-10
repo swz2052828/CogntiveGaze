@@ -163,7 +163,7 @@ dataset paper with de-identification attached.
 > 0.982 in the other three cells and **0.297** in that one, where an attacker who
 > does not know the cohort size recovers no structure at all (ARI 0.000). It
 > breaks *discovery*, not *verification*: an attacker holding a few labelled
-> frames per person still verifies 35.7% [17, 52] of that cell's face crops,
+> frames per person still verifies 35.7% [27, 45] of that cell's face crops,
 > against 90–100% in the other three and a 1.6% floor. On the eye ROI, which
 > contains only edited pixels, per-frame identity alone suffices: verification
 > 63.2% → 2.04% and linkage 0.805 [0.63, 0.94] → 0.148 [0.10, 0.27], against
@@ -389,9 +389,14 @@ Place immediately after *GAN-based Privacy De-identification*.
 > ("self-aligned") it is labelled as such, and the number of frames surviving
 > detection is reported beside it.
 >
-> **Uncertainty.** Frames of one participant are not independent. Privacy
-> intervals are 95% subject-level cluster bootstrap (2,000 replicates, resampling
-> participants with replacement, gallery held fixed). Utility differences are
+> **Uncertainty.** Frames of one participant are not independent, so every
+> privacy interval is a 95% participant-level cluster bootstrap. Verification
+> intervals hold the operating threshold at its full-data value (the attacker
+> calibrates once) and resample participants' genuine scores (2,000 replicates);
+> re-estimating a 1-in-1,000 impostor quantile inside each resample biases the
+> interval upward, by 10 points on one face ROI. Linkage intervals resample
+> participants, keep a duplicated participant's label, and refit (1,000
+> replicates). Utility differences are
 > paired within participant (n = 17).
 
 ---
@@ -427,12 +432,12 @@ axis before the utility table that it reframes.
 > **Full synthesis does remove the correspondence to the real face.** With the
 > ocular region synthesised as well, the same attack falls to **0.2% / 1.8%**
 > TAR@FAR=1e-3, at or below the floor (FaceNet: 0.00% / 1.48%); the face ROI
-> falls from 100% to **22.0%** [5.2, 44.5] for Identity A and **23.3%**
-> [8.2, 41.8] for Identity B. The two templates agree, and so do the two
+> falls from 100% to **22.0%** [6.1, 41.3] for Identity A and **23.3%**
+> [7.2, 43.2] for Identity B. The two templates agree, and so do the two
 > recognisers, so this is a property of the method rather than of a particular
 > source face or a particular recogniser.
 >
-> The face-ROI intervals are wide — [5.2, 44.5] for Identity A — because the
+> The face-ROI intervals are wide — [6.1, 41.3] for Identity A — because the
 > sampling unit is 18 participants. The direction is secure: the lower bound is
 > more than three times the 1.6% floor, and both templates and both recognisers
 > agree. The magnitude is not: these data support "well above floor, an order of
@@ -496,8 +501,8 @@ axis before the utility table that it reframes.
 >
 > | Edit domain | Fixed identity per participant | Fresh identity per frame |
 > |---|---|---|
-> | DeepPrivacy2, face | ARI 1.000 · TAR 100% | ARI 0.982 · TAR 89.7% [84, 100] |
-> | DeepPrivacy2, full body | ARI 0.982 · TAR 99.9% | **ARI 0.297 · TAR 35.7% [17, 52]** |
+> | DeepPrivacy2, face | ARI 1.000 · TAR 100% | ARI 0.982 · TAR 89.7% [86, 93] |
+> | DeepPrivacy2, full body | ARI 0.982 · TAR 99.9% | **ARI 0.297 · TAR 35.7% [27, 45]** |
 >
 > Widening the edit domain alone changes nothing, and neither does resampling the
 > identity alone; only both together break the partition, and then an attacker
@@ -584,9 +589,9 @@ TAR at FAR = 1e-3, ArcFace, with 95% subject-level bootstrap CI.
 
 | Released stream | Real Data | Full Synthetic (A) | Full Synthetic (B) | Hybrid (Real Eyes) |
 |---|---|---|---|---|
-| Face ROI, TAR (A1) | 100% | 22.0% [5.2, 44.5] | 23.3% [8.2, 41.8] | 22.0% (face is synthetic) |
-| Left eye ROI, TAR (A1) | 66.6% [53.6, 79.6] | 0.2% [0.0, 3.0] | 0.6% [0.0, 3.1] | **66.6%** (unaltered) |
-| Right eye ROI, TAR (A1) | 62.2% [49.0, 84.6] | 1.8% [0.1, 5.7] | 1.1% [0.0, 4.8] | **62.2%** (unaltered) |
+| Face ROI, TAR (A1) | 100% | 22.0% [6.1, 41.3] | 23.3% [7.2, 43.2] | 22.0% (face is synthetic) |
+| Left eye ROI, TAR (A1) | 66.6% [53.1, 78.7] | 0.2% [0.0, 0.5] | 0.6% [0.0, 1.6] | **66.6%** (unaltered) |
+| Right eye ROI, TAR (A1) | 62.2% [49.7, 73.3] | 1.8% [0.1, 4.4] | 1.1% [0.0, 2.8] | **62.2%** (unaltered) |
 | *Session-nuisance floor* | *1.6%* | *1.6%* | *1.6%* | *1.6%* |
 | Face ROI, ARI @ k=18 (A2) | 1.000 | 1.000 | 1.000 | 1.000 |
 | Left eye ROI, ARI @ k=18 (A2) | 0.844 [0.70, 0.96] | 0.684 [0.59, 0.86] | 0.737 [0.60, 0.88] | 0.844 (unaltered) |

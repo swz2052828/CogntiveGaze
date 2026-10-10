@@ -140,7 +140,7 @@ the field, and with a competing claim it reads as avoidance.
   links at 0.982.
 - **Wording for the 0.297 cell:** "reduces", never "prevents" — it is above the
   0.089 floor and pair AUC is 0.78; and release-only *verification* in that cell
-  is still 35.7% [17, 52] (privaudit). The condition blocks discovery, not
+  is still 35.7% [27, 45] (privaudit). The condition blocks discovery, not
   verification. Say both.
 - **Bootstrap intervals are subject-level.** The first version of the bootstrap
   gave duplicated participants distinct labels and produced intervals that

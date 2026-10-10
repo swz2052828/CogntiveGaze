@@ -79,31 +79,27 @@ def verification(X1, y1, X2, y2, n_boot=1000, seed=0):
                            np.sqrt(0.5 * (gen.var() + imp.var()) + 1e-12))}
     res.update(tar_at_far(S.ravel(), lab.ravel()))
 
-    # participant bootstrap of TAR@FAR=1e-3: rows/columns of drawn participants,
-    # genuine iff same ORIGINAL participant (duplicates stay the same person)
-    rng = np.random.default_rng(seed)
+    # Participant bootstrap of TAR@FAR=1e-3 at a FIXED operating point. The
+    # threshold is the impostor quantile on the full data -- the attacker
+    # calibrates once -- and the bootstrap resamples participants' genuine hits.
+    # Re-estimating the 99.9th impostor quantile inside each resample is biased:
+    # a resample holds ~63% of the participants, the extreme quantile of fewer
+    # impostors is lower, and bootstrap TAR comes out high (measured +0.10 on a
+    # face ROI). At a fixed threshold the bias is ~0.
+    thr = np.quantile(imp, 1.0 - 1e-3)
     pid_of_probe = np.array([subs.index(v) for v in y2])
-    rows = {i: np.flatnonzero(pid_of_probe == i) for i in range(len(subs))}
-    vals = []
-    for _ in range(n_boot):
-        drawn = rng.integers(0, len(subs), len(subs))
-        r = np.concatenate([rows[i] for i in drawn])
-        Sb = S[np.ix_(r, drawn)]
-        Lb = (pid_of_probe[r][:, None] == drawn[None, :]).astype(int)
-        vals.append(tar_at_far(Sb.ravel(), Lb.ravel(), fars=(1e-3,))["TAR@FAR=0.001"])
-    vals = np.asarray(vals)
-    # A resample holds ~63% of the participants, so it has fewer impostor scores,
-    # and an extreme quantile (the 99.9th, for FAR 1e-3) of a smaller set is biased
-    # low -> the threshold drops -> bootstrap TAR is biased HIGH. A plain
-    # percentile interval then sits above its own point estimate. Use the basic
-    # (bias-reflecting) interval 2*theta - q, and refuse it if it still excludes
-    # the point.
+    hit = S[np.arange(len(y2)), pid_of_probe] >= thr
+    per = {i: hit[pid_of_probe == i] for i in range(len(subs))}
+    rng = np.random.default_rng(seed)
+    vals = np.asarray([np.concatenate([per[i] for i in
+                       rng.choice(np.arange(len(subs)), size=len(subs), replace=True)]).mean()
+                       for _ in range(n_boot)])
+    lo, hi = (float(x) for x in np.percentile(vals, [2.5, 97.5]))
     pt = res["TAR@FAR=0.001"]
-    q_lo, q_hi = np.percentile(vals, [2.5, 97.5])
-    lo, hi = float(np.clip(2 * pt - q_hi, 0, 1)), float(np.clip(2 * pt - q_lo, 0, 1))
     res["TAR@FAR=0.001_boot_bias"] = float(vals.mean() - pt)
     res["TAR@FAR=0.001_ci95"] = [lo, hi] if lo <= pt <= hi else None
-    res["TAR_ci_method"] = "basic bootstrap (bias-reflecting), participant level"
+    res["TAR_ci_method"] = "participant bootstrap at the full-data operating threshold"
+    res["participants_with_hits"] = int(sum(per[i].any() for i in per))
     return res
 
 
