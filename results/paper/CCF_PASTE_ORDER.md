@@ -539,7 +539,8 @@ axis before the utility table that it reframes.
 > 120 px face-free patch of the same frames — identical frame selection,
 > identical downstream steps, only the pixels differ — gives **TAR@FAR=1e-3 =
 > 1.57%**, Rank-1 50.6%, d′ 0.458, agreeing with the face-crop floor to three
-> significant figures.
+> significant figures; its linkage floor is **ARI 0.074**, against 0.089 for the
+> face pipeline. Eye-ROI linkage is quoted against the former.
 >
 > **The open tier leaks too, by two orders of magnitude less.** Our release plan
 > puts per-frame gaze estimates and oculomotor measures in an open tier because
