@@ -135,6 +135,10 @@ dataset paper with de-identification attached.
 > objective. We distinguish an attacker holding enrolment photographs from one
 > holding only the released corpus, and show the two differ by up to 60 points on
 > identical pixels, which makes an unqualified privacy number uninterpretable.
+> We release the protocol as an audit tool and a fifteen-item release checklist
+> for gaze corpora [CITE: privaudit-repo]; run on this study's saved embeddings it
+> reproduces every eye-ROI verification and linkage figure exactly, and end to end,
+> re-embedding the crops, to within GPU inference noise.
 >
 > **Gaze utility and linkability share a representation.** The ocular region is
 > simultaneously the signal gaze estimation needs and the region that identifies
@@ -396,7 +400,14 @@ Place immediately after *GAN-based Privacy De-identification*.
 > re-estimating a 1-in-1,000 impostor quantile inside each resample biases the
 > interval upward, by 10 points on one face ROI. Linkage intervals resample
 > participants, keep a duplicated participant's label, and refit (1,000
-> replicates). Utility differences are
+> replicates).
+>
+> **Tooling.** Every attack, floor and interval above is packaged as `privaudit`,
+> which takes a candidate release in GazeCapture layout and maps each result onto a
+> release checklist. Fed this study's saved embeddings it reproduces all 32
+> eye-ROI verification and linkage values exactly; re-embedding the crops from
+> scratch, all 46 audited values agree within GPU inference noise (embeddings
+> differ by ~1e-4 between runs; ARI within 0.015, TAR within one probe). Utility differences are
 > paired within participant (n = 17).
 
 ---
