@@ -170,8 +170,8 @@ otherwise catch.
 - **Single session is the first limitation, not the last.** It bounds the
   photometric result, and the deployable fix (per-session identity) is exactly
   what it cannot test. A second recording is the decisive experiment.
-- **Condition (i) is one initialisation, three architectures.** Say so; it
-  supports direction and rough size, not differences under ~0.4 cm.
+- **Condition (i) is five initialisations, three architectures** (iTracker
+  pending); FAMS on a 10% subset with a matched baseline. Say so.
 - **Full-body DeepPrivacy2 utility is measured** (2026-10-10): retrained, it sits
   at the no-information level, like face mode. That is what turns the one point
   that breaks linkage into evidence for the conclusion rather than an exception.
@@ -239,8 +239,9 @@ sections use plus one sentence.
 | Breaking per-participant consistency suffices | Half right; two-part condition |
 | DeepPrivacy2 costs +11–15 cm | That is deploy-only and includes domain shift; retrained, it is the no-information level |
 | "Methods with a wider edit domain remain to be tested" | Tested: DeepPrivacy2 face and full body |
-| Hybrid recovers "86–108%" after retraining | With full body added: 82–108% (one AFFNet single-draw cell) |
-| Identity resampling "costs at most 0.31 cm" | Face mode only; in full-body mode per-frame is 0.02–0.86 cm better |
+| Hybrid recovers "86–108%" / "82–108%" after retraining | Single-draw figures; five draws give 91–106% (the 82% AFFNet cell was noise: +0.15 ± 0.39) |
+| Identity resampling "costs at most 0.31 cm" | Five draws: −0.63 to +0.19 cm, never worse by more than 0.19 |
+| DP2 retrained "never better than the mean" (120/120) | Five draws: 580 of 600 folds at or above it, none more than 0.17 cm below |
 | Eye-ROI ARI 0.795 (DP2 face, fixed) | Single fit; bootstrap point estimate 0.805 |
 
 ## Open items
