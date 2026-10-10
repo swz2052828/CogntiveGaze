@@ -170,9 +170,11 @@ otherwise catch.
   what it cannot test. A second recording is the decisive experiment.
 - **Condition (i) is one initialisation, three architectures.** Say so; it
   supports direction and rough size, not differences under ~0.4 cm.
-- **Full-body DeepPrivacy2 utility is a bound, not a measurement.** Its eyes are
-  repainted at lower resolution than the face mode whose eyes already carry no
-  gaze signal; the figure draws it at the no-information level with an arrow.
+- **Full-body DeepPrivacy2 utility is measured** (2026-10-10): retrained, it sits
+  at the no-information level, like face mode. That is what turns the one point
+  that breaks linkage into evidence for the conclusion rather than an exception.
+- **The unedited second-person path** fired in 1.4% of full-root frames (mostly
+  one participant), outside the released crops; say so, with the check.
 - **Missing `styleganL_nocse`** (410 Gone upstream): no person in our frames
   needed it; on other footage that path would leave people unedited.
 - **Conclusion: controlled access, not open deposit.** It follows from the
@@ -235,6 +237,8 @@ sections use plus one sentence.
 | Breaking per-participant consistency suffices | Half right; two-part condition |
 | DeepPrivacy2 costs +11–15 cm | That is deploy-only and includes domain shift; retrained, it is the no-information level |
 | "Methods with a wider edit domain remain to be tested" | Tested: DeepPrivacy2 face and full body |
+| Hybrid recovers "86–108%" after retraining | With full body added: 82–108% (one AFFNet single-draw cell) |
+| Identity resampling "costs at most 0.31 cm" | Face mode only; in full-body mode per-frame is 0.02–0.86 cm better |
 | Eye-ROI ARI 0.795 (DP2 face, fixed) | Single fit; bootstrap point estimate 0.805 |
 
 ## Open items

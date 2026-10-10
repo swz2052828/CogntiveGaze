@@ -18,7 +18,8 @@ import pandas as pd
 RUNS = Path("/springbrook/share/eng/esrpxk/runs")
 BBS = ["mobilenet_v3", "affnet", "mgazenet"]
 PAIRS = [("swap1", "swap1_oldeye"), ("swap2", "swap2_oldeye"),
-         ("dp2s", "dp2s_oldeye"), ("dp2f", "dp2f_oldeye")]
+         ("dp2s", "dp2s_oldeye"), ("dp2f", "dp2f_oldeye"),
+         ("dp2fbs", "dp2fbs_oldeye"), ("dp2fbf", "dp2fbf_oldeye")]
 
 
 def fold_mean(path):

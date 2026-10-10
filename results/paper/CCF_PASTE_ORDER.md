@@ -56,7 +56,7 @@ against the 4.9–5.9 cm baselines in Table 3.
 > signal" scores on single-session data.
 >
 > The axes do not trade as assumed. Retaining the genuine ocular region recovers
-> 85–101% of the synthesis penalty in every architecture, and 86–108% when the
+> 85–101% of the synthesis penalty in every architecture, and 82–108% when the
 > models are retrained on the release — yet those same crops verify identity at
 > 62–80% TAR at FAR 1e-3 against a measured 1.6% floor, under two unrelated
 > recognisers. The pixels that make the protocol work are the pixels that
@@ -67,9 +67,9 @@ against the 4.9–5.9 cm baselines in Table 3.
 > worse: a model retrained on it is no better than predicting the screen centre.
 > Across a replacement and a removal method, the one configuration that breaks
 > linkage — repainting the whole person with a fresh identity every frame — is
-> one that discards the eyes. We state what a releasable gaze corpus would
-> require, and report what our own tiered release leaks when measured rather than
-> assumed.
+> one on which a retrained gaze model learns nothing. We state what a releasable
+> gaze corpus would require, and report what our own tiered release leaks when
+> measured rather than assumed.
 
 If the venue caps at 250: drop "seven oculomotor tasks", the sentence on removal
 by inpainting, and the final clause about the tiered release.
@@ -140,7 +140,7 @@ dataset paper with de-identification attached.
 > simultaneously the signal gaze estimation needs and the region that identifies
 > best per pixel. We show that the protocol which recovers accuracy does so by
 > releasing genuine ocular biometrics — recovering 85–101% of the synthesis
-> penalty in *every* architecture we test, and 86–108% when the models are
+> penalty in *every* architecture we test, and 82–108% when the models are
 > retrained on the release, because in every case what it restores is the
 > participant's own eye pixels — and that full synthesis,
 > which does remove the correspondence to the real face, still leaves the corpus
@@ -635,6 +635,25 @@ Full Synthetic errors of 15.9–20.5 cm are **worse than predicting the mean**
 these columns with Table 5: most of this penalty is domain shift, and what is
 left after retraining is the no-information level.
 
+DeepPrivacy2 **full body** (FB_cse_mask_face, §8), same five initialisations and
+harness:
+
+| Model | Full Synthetic (fixed) | Hybrid (fixed) | Full Synthetic (per frame) | Hybrid (per frame) |
+|---|---|---|---|---|
+| iTracker | 15.92 ± 0.29 (+10.06) | **6.01 ± 0.11 (+0.16)** | 17.12 ± 0.35 (+11.27) | **5.96 ± 0.10 (+0.11)** |
+| MobileNet-V3 Large | 14.63 ± 0.81 (+9.65) | **5.60 ± 0.48 (+0.61)** | 14.65 ± 0.76 (+9.67) | **5.61 ± 0.45 (+0.63)** |
+| AFFNet | 17.72 ± 0.42 (+12.05) | **5.78 ± 0.23 (+0.11)** | 17.82 ± 0.47 (+12.16) | **5.80 ± 0.23 (+0.13)** |
+| MGazeNet | 15.28 ± 0.29 (+10.31) | **5.22 ± 0.20 (+0.26)** | 15.59 ± 0.19 (+10.63) | **5.35 ± 0.20 (+0.39)** |
+
+Full Synthetic +9.65 to +12.16 cm, again worse than predicting the mean; Hybrid
+recovers 93–99%. Every one of the 421,848 generated frames had the participant
+detected and repainted. In 2,861 frames (1.4%, mostly participant 00009) the
+detector also returned a second person region without a surface map, which the
+pipeline leaves unedited (the generator for that case is no longer
+distributed); the participant's released crops in those frames are changed as
+much as in all others (mean |Δ| ≥ 21 against the original in every sampled
+frame), so no original pixels reach the release.
+
 ### 9b. Table 4 — ADD (new)
 
 Hybrid minus Full Synthetic, **paired within initialisation**, 5 draws.
@@ -685,8 +704,9 @@ magnitude below the effect in every cell.
 Penalty in cm against each model's own real-data baseline: mean over MobileNet-V3
 Large, AFFNet and MGazeNet, [min, max] across the three. Condition (ii) is
 recomputed over the same three backbones so the columns are comparable.
-Condition (i) is one initialisation per cell (iTracker, ~8.5 h per fold, was not
-retrained). Same recipe and participant partition as the real-data models.
+Condition (i) is one initialisation per cell here; draws 2–5 for these three
+backbones and an iTracker draw are running and will replace this table with
+mean ± SD (iTracker, ~9 h per fold, enters as a fourth column group). Same recipe and participant partition as the real-data models.
 
 | Arm | (ii) train real, test de-id | (i) train de-id, test real | (i) train de-id, test de-id |
 |---|---|---|---|
@@ -698,6 +718,10 @@ retrained). Same recipe and participant partition as the real-data models.
 | DeepPrivacy2 fixed, Hybrid | **+0.52** [+0.07, +1.03] | **−0.11** [−0.21, −0.03] | **−0.15** [−0.20, −0.07] |
 | DeepPrivacy2 per frame, Full Synthetic | +12.73 [+11.25, +14.85] | +4.43 [+3.77, +4.92] | +4.37 [+3.79, +4.74] |
 | DeepPrivacy2 per frame, Hybrid | **+0.46** [+0.01, +0.97] | **+0.01** [−0.07, +0.06] | **−0.02** [−0.10, +0.03] |
+| DeepPrivacy2 full body fixed, Full Synthetic | +10.67 [+9.65, +12.05] | +4.75 [+4.21, +5.08] | +4.68 [+4.22, +5.00] |
+| DeepPrivacy2 full body fixed, Hybrid | **+0.33** [+0.11, +0.61] | **+0.27** [+0.03, +0.75] | **+0.23** [−0.08, +0.70] |
+| DeepPrivacy2 full body per frame, Full Synthetic | +10.82 [+9.67, +12.16] | +4.34 [+3.91, +4.61] | +4.34 [+3.88, +4.62] |
+| DeepPrivacy2 full body per frame, Hybrid | **+0.38** [+0.13, +0.63] | **−0.10** [−0.22, +0.02] | **−0.11** [−0.23, +0.00] |
 | *No-information reference (predict the mean)* | *+4.17 [+3.70, +4.41]* | | |
 
 > **Retraining does not rescue full synthesis.** For SimSwap, the penalty
@@ -710,29 +734,33 @@ retrained). Same recipe and participant partition as the real-data models.
 > gaze model for real users.
 >
 > **Removal by inpainting leaves no gaze signal at all.** For DeepPrivacy2 the
-> picture is the reverse. Most of the condition (ii) penalty *is* domain shift —
-> retraining removes about two thirds of it — but what remains is the
-> no-information level. No retrained model, in any fold, under either identity
-> regime or on either test set, does better than predicting the mean (60 of 60
-> fold-level errors at or above it, by 0.0 to 1.7 cm); 18 of the 30 training runs
-> reach their best validation error at the first epoch and learn nothing
-> thereafter, and per-participant calibration does not help. The repainted eyes
+> picture is the reverse. More than half of the condition (ii) penalty *is*
+> domain shift — retraining removes 55–64% of it — but what remains is the
+> no-information level, in face mode and in full-body mode alike. No retrained
+> model, in any fold, under either mode or identity regime or on either test set,
+> does better than predicting the mean (120 of 120 fold-level errors at or above
+> it, by 0.0 to 1.7 cm); 45 of the 60 training runs reach their best validation
+> error at the first epoch and learn nothing thereafter, and per-participant
+> calibration does not help. The repainted eyes
 > carry no recoverable gaze information. This replaces the qualitative
 > observation that the generator "alters gaze direction" with a measurement.
 >
 > **Hybrid recovers the penalty in every condition.** Restoring the genuine
-> ocular ROIs recovers 86–104% of the penalty when the retrained model is
-> deployed on real faces and 93–108% on the release, for both families and both
-> identity regimes; every Hybrid cell in condition (i) lies within ±0.31 cm of
-> baseline, most inside the initialisation noise floor. The central utility
-> finding of Table 4 therefore does not depend on how the model was trained.
+> ocular ROIs recovers 82–105% of the penalty when the retrained model is
+> deployed on real faces and 83–108% on the release, for both families, both
+> DeepPrivacy2 modes and both identity regimes. All but one Hybrid cell in
+> condition (i) lie within ±0.31 cm of baseline, most inside the initialisation
+> noise floor; the exception, AFFNet on full-body DeepPrivacy2 with a fixed
+> identity (+0.75 / +0.70 cm), is a single-draw cell. The central utility finding
+> of Table 4 therefore does not depend on how the model was trained.
 >
-> **The identity regime costs little; the edit domain costs everything.** Once
+> **The identity regime costs nothing; the edit domain costs everything.** Once
 > models are trained on the release, resampling the synthetic identity every
-> frame changes utility by at most 0.31 cm against a fixed identity, in either
-> direction, for both Full Synthetic and Hybrid (in condition (ii) the Full
+> frame never makes utility worse by more than 0.31 cm against a fixed identity
+> (face mode, either direction); in full-body mode it is 0.02–0.86 cm *better*,
+> the largest gap being the AFFNet Hybrid cell above. In condition (ii) the Full
 > Synthetic arm moves by up to 1.2 cm, but there both regimes are already worse
-> than predicting the mean). What destroys utility is repainting the eyes — and
+> than predicting the mean. What destroys utility is repainting the eyes — and
 > repainting everything the crop contains, eyes included, is what §8 found
 > necessary to break face-crop linkage.
 
@@ -831,7 +859,7 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > cm, a cost that retraining on the release does not remove (+2.2 to +5.4 cm);
 > inpainting the face removes the gaze signal outright, leaving retrained models
 > no better than predicting the mean. Hybrid recovers 85–101% of the penalty —
-> 86–108% after retraining — but only at the price of releasing genuine ocular
+> 82–108% after retraining — but only at the price of releasing genuine ocular
 > biometrics; and both protocols leave the corpus linkable by participant, so one
 > labelled example compromises a cluster. The linkage is structural rather than incidental: it survives on a
 > 120 px ocular crop containing none of the contextual cues a face crop carries,
@@ -857,14 +885,13 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > tested on one replacement method (two templates) and one removal method in two
 > modes; diffusion-based de-identification is untested. Full-body DeepPrivacy2
 > ran without its generator for persons that DensePose fails to map (the weights
-> are no longer distributed); no such person occurred in our frames, but on other
-> footage that path would leave people unedited. Retraining on the release was
+> are no longer distributed). The participant was mapped and repainted in every
+> frame; in 1.4% of frames a second person region took the unmapped path and was
+> left unedited, outside the released crops. On footage with more people, or
+> people DensePose cannot map, that path would release them unedited. Retraining on the release was
 > run for three of the four architectures and one initialisation per cell, so
 > it supports the direction and rough size of each penalty, not differences
-> below about 0.4 cm; and the utility of full-body DeepPrivacy2 was not
-> measured — it repaints the eyes at lower resolution than the face mode whose
-> eyes already carry no gaze signal, so we treat the no-information level as its
-> lower bound rather than report a number.
+> below about 0.4 cm.
 >
 > A deployable route must satisfy both halves of the condition we establish:
 > resample the synthetic identity per recording session, *and* ensure the release
@@ -913,9 +940,11 @@ floor (1.57%), not "borrowed from panel a".
 > linkage floor. The shaded corner — private and useful — contains no protocol.
 > Hybrid sits at the utility of real data and the linkage of real data; Full
 > Synthetic loses most of the gaze signal and none of the linkage. The single
-> point that leaves the top row (diamond: DeepPrivacy2 full body with a fresh
-> identity per frame, ARI 0.297) repaints the eyes; its utility was not measured
-> and is drawn at the no-information level as a lower bound.
+> point that leaves the top row (DeepPrivacy2 full body with a fresh identity per
+> frame, ARI 0.297) is one on which a retrained gaze model learns nothing
+> (+4.34 cm, at the no-information reference). Restoring the original eyes to it
+> (square beside the star) recovers the utility and, with it, the linkage
+> (0.849).
 
 **Caption, release-only linkage.**
 

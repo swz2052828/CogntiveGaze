@@ -19,7 +19,8 @@ import pandas as pd
 
 RUNS = Path("/springbrook/share/eng/esrpxk/runs")
 BBS = ["itracker", "mobilenet_v3", "affnet", "mgazenet"]
-DP2_ARMS = ["dp2s", "dp2s_oldeye", "dp2f", "dp2f_oldeye"]
+DP2_ARMS = ["dp2s", "dp2s_oldeye", "dp2f", "dp2f_oldeye",
+            "dp2fbs", "dp2fbs_oldeye", "dp2fbf", "dp2fbf_oldeye"]   # fb = full body
 SWAP_ARMS = ["swap1", "swap1_oldeye", "swap2", "swap2_oldeye"]
 
 
@@ -75,11 +76,13 @@ def main():
                           draws=[float(x) for x in v])
         # share of the full-replacement penalty that restoring original eyes recovers
         for full, hyb in (("swap1", "swap1_oldeye"), ("swap2", "swap2_oldeye"),
-                          ("dp2s", "dp2s_oldeye"), ("dp2f", "dp2f_oldeye")):
+                          ("dp2s", "dp2s_oldeye"), ("dp2f", "dp2f_oldeye"),
+                          ("dp2fbs", "dp2fbs_oldeye"), ("dp2fbf", "dp2fbf_oldeye")):
             row[hyb]["recovered_frac"] = 1 - row[hyb]["penalty"] / row[full]["penalty"]
         out[bb] = row
 
-    cols = ["none", "swap1", "swap1_oldeye", "dp2s", "dp2s_oldeye", "dp2f", "dp2f_oldeye"]
+    cols = ["none", "swap1", "swap1_oldeye", "dp2s", "dp2s_oldeye", "dp2f", "dp2f_oldeye",
+            "dp2fbs", "dp2fbs_oldeye", "dp2fbf", "dp2fbf_oldeye"]
     print("\nbase error, cm (mean over 5 draws; penalty vs none in brackets)")
     print(f"{'model':14s}" + "".join(f"{c:>18s}" for c in cols))
     for bb, row in out.items():
@@ -91,7 +94,8 @@ def main():
     for bb, row in out.items():
         print(f"  {bb:14s} " + "  ".join(
             f"{h}={row[h]['recovered_frac']:.2f}" for h in
-            ("swap1_oldeye", "swap2_oldeye", "dp2s_oldeye", "dp2f_oldeye")))
+            ("swap1_oldeye", "swap2_oldeye", "dp2s_oldeye", "dp2f_oldeye",
+             "dp2fbs_oldeye", "dp2fbf_oldeye")))
 
     p = Path(args.json_out); p.parent.mkdir(parents=True, exist_ok=True)
     json.dump(dict(gate_max_abs_cm=worst, table=out), open(p, "w"), indent=2)

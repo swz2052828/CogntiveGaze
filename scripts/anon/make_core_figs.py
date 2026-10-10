@@ -69,7 +69,8 @@ COND = [("ii", "(ii) train real, test de-id"),
         ("i_real", "(i) train de-id, test real"),
         ("i_anon", "(i) train de-id, test de-id")]
 ARMS = [("swap1", "SimSwap A"), ("swap2", "SimSwap B"),
-        ("dp2s", "DP2 face, fixed"), ("dp2f", "DP2 face, per frame")]
+        ("dp2s", "DP2 face,\nfixed"), ("dp2f", "DP2 face,\nper frame"),
+        ("dp2fbs", "DP2 full body,\nfixed"), ("dp2fbf", "DP2 full body,\nper frame")]
 
 
 def pen(arm, cond):
@@ -118,7 +119,7 @@ fig.savefig(OUT / "fig_core1_privacy.pdf")
 plt.close(fig)
 
 # ============================================================ figure 2
-fig, axes = plt.subplots(1, 2, figsize=(11, 4.0), sharey=False)
+fig, axes = plt.subplots(1, 2, figsize=(14, 4.3), sharey=False)
 cols = ["#7f7f7f", "#2ca02c", "#9467bd"]
 for ax, suffix, title in ((axes[0], "", "(a) Full Synthetic: face AND eyes de-identified"),
                           (axes[1], "_oldeye", "(b) Hybrid: de-identified face, ORIGINAL eyes")):
@@ -177,6 +178,14 @@ pts = [
      eye_mean["DP2 face, per frame"], "o", "#d62728"),
     ("DP2 face per-frame, Hybrid", pen("dp2f_oldeye", "i_real").mean(), face[("face", "frame")],
      eye_mean["Original"], "s", "#d62728"),
+    ("DP2 full body fixed, Full Synthetic", pen("dp2fbs", "i_real").mean(), face[("body", "fixed")],
+     eye_mean["DP2 full body, fixed"], "o", "#8c564b"),
+    ("DP2 full body fixed, Hybrid", pen("dp2fbs_oldeye", "i_real").mean(), face[("body", "fixed")],
+     eye_mean["Original"], "s", "#8c564b"),
+    ("DP2 full body per-frame, Full Synthetic", pen("dp2fbf", "i_real").mean(), face[("body", "frame")],
+     eye_mean["DP2 full body, per frame"], "o", "purple"),
+    ("DP2 full body per-frame, Hybrid", pen("dp2fbf_oldeye", "i_real").mean(), face[("body", "frame")],
+     eye_mean["Original"], "s", "purple"),
 ]
 fig, ax = plt.subplots(figsize=(8.2, 5.4))
 ax.add_patch(plt.Rectangle((-0.6, -0.02), 1.1, 0.32, color="green", alpha=0.10))
@@ -192,17 +201,13 @@ for i, (lab, x, fa, ea, mk, c) in enumerate(pts, 1):
     n = offsets.get(k, 0); offsets[k] = n + 1
     ax.annotate(str(i), (x, yv), xytext=(-4 + 9 * (n % 3), 8 + 9 * (n // 3)),
                 textcoords="offset points", fontsize=7, fontweight="bold")
-# full body, per frame: privacy measured, utility bounded from below
-fb = max(face[("body", "frame")], eye_mean["DP2 full body, per frame"])
-xb = no_info.mean()
-ax.scatter(xb, fb, marker="D", s=55, color="purple", zorder=3, edgecolor="black", lw=0.5,
-           label=f"10. DP2 full body, per frame  (>= {xb:.2f} cm, ARI {fb:.3f})")
-ax.annotate("", xy=(xb + 1.3, fb), xytext=(xb, fb),
-            arrowprops=dict(arrowstyle="->", color="purple"))
-ax.annotate("DP2 full body, per-frame\n(utility not measured: eyes repainted\n"
-            "at 288x160; placed at the no-information\nlevel as a lower bound)",
-            (xb, fb), xytext=(-150, -38), textcoords="offset points", fontsize=7,
-            color="purple")
+# The one point that leaves the top row: say why it is not a solution.
+fbx = pen("dp2fbf", "i_real").mean()
+fby = max(face[("body", "frame")], eye_mean["DP2 full body, per frame"])
+ax.annotate("12: the only configuration that breaks\nlinkage — and a model trained on it\n"
+            "is no better than predicting the mean", (fbx, fby), xytext=(-175, -30),
+            textcoords="offset points", fontsize=7, color="purple",
+            arrowprops=dict(arrowstyle="->", color="purple", lw=0.8))
 ax.axvline(no_info.mean(), color="red", ls="--", lw=0.8)
 ax.text(no_info.mean() + 0.05, 1.04, "no gaze\ninformation", color="red", fontsize=7, va="bottom")
 ax.axhline(FLOOR_ARI, color="grey", ls="--", lw=0.8)
@@ -212,8 +217,8 @@ ax.set_ylim(-0.02, 1.12)
 ax.set_xlabel("utility cost: error penalty (cm), trained on the release, tested on real faces")
 ax.set_ylabel("release linkage: ARI of the most linkable released crop")
 ax.set_title("Privacy-utility plane: circles = Full Synthetic, squares = Hybrid", fontsize=9)
-ax.legend(loc="center left", fontsize=6.8, frameon=True, framealpha=0.9,
-          bbox_to_anchor=(0.12, 0.62), handletextpad=0.4, labelspacing=0.5)
+ax.legend(loc="center left", fontsize=6.5, frameon=True, framealpha=0.9,
+          bbox_to_anchor=(0.10, 0.60), handletextpad=0.4, labelspacing=0.45)
 fig.tight_layout()
 fig.savefig(OUT / "fig_core3_tradeoff.png", dpi=200)
 fig.savefig(OUT / "fig_core3_tradeoff.pdf")
