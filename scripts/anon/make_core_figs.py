@@ -51,6 +51,7 @@ face = {
 face_simswap = [t1("anon_swap/t1_ProcessedSwap_selfalign.json"),
                 t1("anon_swap2/t1_ProcessedSwap2_selfalign.json")]
 face_orig = t1("anon_stage3b/t1sa_none.json")
+face_fams = [t1("anon_fams/t1_fams_per_subject.json"), t1("anon_fams/t1_fams_per_frame.json")]
 
 eye_arms = [
     ("Original", "anon_ari_ci/ari_original_{}.json"),
@@ -60,6 +61,8 @@ eye_arms = [
     ("DP2 face, per frame", "anon_ari_ci/ari_dp2_perframe_{}.json"),
     ("DP2 full body, fixed", "anon_dp2/fullbody/ari_dp2fb_per_subject_{}.json"),
     ("DP2 full body, per frame", "anon_dp2/fullbody/ari_dp2fb_per_frame_{}.json"),
+    ("FAMS (diffusion), fixed seed", "anon_fams/ari_fams_per_subject_{}.json"),
+    ("FAMS (diffusion), per frame", "anon_fams/ari_fams_per_frame_{}.json"),
 ]
 eye = {name: {e: boot(p.format(e)) for e in ("appleLeftEye", "appleRightEye")}
        for name, p in eye_arms}
@@ -80,7 +83,7 @@ def pen(arm, cond):
 no_info = np.array([MEAN_PRED - util[bb]["baseline"]["mean"] for bb in BBS])
 
 # ============================================================ figure 1
-fig, (a, b) = plt.subplots(1, 2, figsize=(10.5, 3.9),
+fig, (a, b) = plt.subplots(1, 2, figsize=(10.5, 4.4),
                            gridspec_kw={"width_ratios": [1, 1.6]})
 M = np.array([[face[("face", "fixed")], face[("face", "frame")]],
               [face[("body", "fixed")], face[("body", "frame")]]])
@@ -91,9 +94,9 @@ for r in range(2):
                fontweight="bold", color="white" if M[r, c] > 0.6 else "black")
 a.set_xticks([0, 1], ["fixed identity\nper participant", "fresh identity\nper frame"])
 a.set_yticks([0, 1], ["DP2 face mode\n(edits face box)", "DP2 full body\n(edits whole person)"])
-a.set_title(f"(a) Face-crop linkage, ARI @ k=18\n(floor {FLOOR_ARI}; "
-            f"original {face_orig:.3f}, SimSwap A/B {face_simswap[0]:.3f}/{face_simswap[1]:.3f})",
-            fontsize=9)
+a.set_title(f"(a) Face-crop linkage, ARI @ k=18 (floor {FLOOR_ARI})\n"
+            f"original {face_orig:.3f}, SimSwap A/B {face_simswap[0]:.3f}/{face_simswap[1]:.3f}, "
+            f"FAMS {face_fams[0]:.3f}/{face_fams[1]:.3f}", fontsize=9)
 for s in a.spines.values():
     s.set_visible(False)
 plt.colorbar(im, ax=a, fraction=0.046, pad=0.04)
@@ -147,8 +150,12 @@ for ax, suffix, title in ((axes[0], "", "(a) Full Synthetic: face AND eyes de-id
     ax.set_ylabel("error penalty vs real-data model (cm)")
     ax.set_title(title, fontsize=9)
 axes[0].legend(frameon=False, fontsize=8, loc="upper left")
+nd = sorted({util[bb][a][c]["n_draws"] for bb in BBS for a, _ in ARMS
+             for c in ("i_real", "i_anon") if util[bb][a].get(c)})
+nd_txt = (f"{nd[0]} initialisation draw{'s' if nd[0] > 1 else ''}" if len(nd) == 1
+          else f"{nd[0]}-{nd[-1]} initialisation draws")
 fig.text(0.5, -0.01, "bars: mean of MobileNet-V3, AFFNet, MGazeNet; dots: each backbone. "
-         "(ii) uses 5 initialisation draws, (i) one draw.", ha="center", fontsize=8)
+         f"(ii) uses 5 initialisation draws, (i) {nd_txt}.", ha="center", fontsize=8)
 fig.tight_layout()
 fig.savefig(OUT / "fig_core2_utility.png", dpi=200, bbox_inches="tight")
 fig.savefig(OUT / "fig_core2_utility.pdf", bbox_inches="tight")

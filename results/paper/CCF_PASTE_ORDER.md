@@ -205,8 +205,9 @@ dataset paper with de-identification attached.
 > anonymisation leaves identifiers outside the face, and evaluates it by
 > re-identifying anonymised pedestrians from original images [CITE: deepprivacy2]; CIAGAN conditions the generation so that
 > expression and pose survive while identity does not [CITE: ciagan]; more recent
-> work removes identity in diffusion latent space, including training-free
-> variants [CITE: fluid, apl]. Face *swapping* methods such as SimSwap and
+> work removes identity with diffusion models, conditioning a generator on the
+> source face so that attributes survive [CITE: fams], or editing in diffusion
+> latent space, including training-free variants [CITE: fluid, apl]. Face *swapping* methods such as SimSwap and
 > SimSwap++ instead optimise identity *replacement* [CITE: simswap, simswappp].
 > The distinction is expected to matter for gaze: removal methods that inpaint
 > the ocular region should destroy the signal the task depends on, whereas
@@ -506,6 +507,20 @@ axis before the utility table that it reframes.
 > DeepPrivacy2 arm is at or below floor (≤ 1.2%), consistent with DeepPrivacy2's
 > own re-identification evaluation, which, like A1, matches enrolment images to
 > the release and does not test release-only linkage.
+>
+> **A diffusion method meets the condition's first half by itself, and fails on
+> the second.** Face Anonymization Made Simple [CITE: fams] conditions a diffusion
+> model on the source face and pastes an FFHQ-aligned square — face, forehead,
+> some hair — back into the frame. Holding its noise seed fixed per participant
+> does not hold the synthetic person fixed: the output identity follows the source
+> frame, and the fixed-seed and fresh-seed regimes are indistinguishable on every
+> measure. It therefore breaks per-participant consistency by construction, and
+> eye-ROI linkage roughly halves — verification 5–8% against 43–63% for SimSwap,
+> ARI 0.29–0.33 [lower bounds 0.19–0.26] against 0.68–0.80 — though every interval
+> stays above the eye-native floor (0.074). The face crop, whose border, head pose
+> and geometry the aligned square leaves alone, stays linkable at ARI 0.85–0.94.
+> The two-part condition was derived from SimSwap and DeepPrivacy2; this is its
+> prediction holding on a family it was not derived from.
 >
 > The residual channels the recogniser does exploit — skin tone, periocular
 > geometry, crop scale — are signals gaze estimation reads, which is why the axis
@@ -882,8 +897,9 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > populations and describe the contribution as an evaluation of dataset release
 > rather than of home screening. Privacy is measured with two recogniser
 > families, both trained on web-scale face corpora. The structural claim is
-> tested on one replacement method (two templates) and one removal method in two
-> modes; diffusion-based de-identification is untested. Full-body DeepPrivacy2
+> tested on one replacement method (two templates), one removal method in two
+> modes and one diffusion method; methods editing in diffusion latent space are
+> untested. Full-body DeepPrivacy2
 > ran without its generator for persons that DensePose fails to map (the weights
 > are no longer distributed). The participant was mapped and repainted in every
 > frame; in 1.4% of frames a second person region took the unmapped path and was

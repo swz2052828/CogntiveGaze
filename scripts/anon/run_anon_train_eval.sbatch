@@ -37,11 +37,14 @@ if [ "$REP" = 1 ]; then TR=$R/anon_train; SFX=""; else TR=$R/anon_train/rep$REP;
 BASE_CKPT="$TR/$TAG/$BB/base/seed42/fold${FOLD}_best_${BB}_gaze_segmenter.pth"
 META_CKPT="$R/meta_pipeline_clean_metacmp_${BB}/meta_on_base_calib/seed42/fold${FOLD}_meta_film_${BB}_gaze.pth"
 [ -f "$BASE_CKPT" ] || { echo "FATAL missing $BASE_CKPT"; exit 1; }
+# Real test always on the full manifest; the de-identified test on MEAN_ANON
+# (the subset manifest when the release is a subsample).
 for TEST in real:$D/ProcessedData anon:$ROOT; do
   TT=${TEST%%:*}; DP=${TEST#*:}
+  if [ "$TT" = anon ]; then MP=${MEAN_ANON:-meanno7_clean}; else MP=meanno7_clean; fi
   echo "########## train=$TAG test=$TT $BB fold$FOLD $(date +%T)"
   $CLI metacompare \
-    --data-path "$DP" --eye-path "$DP" --mean-path meanno7_clean \
+    --data-path "$DP" --eye-path "$DP" --mean-path "$MP" \
     --input-mode multistream --backbone $BB --use-grid \
     --base-checkpoint "$BASE_CKPT" --meta-checkpoint "$META_CKPT" \
     --calib-support-root "$D/calib_support_K72" \

@@ -40,10 +40,10 @@ META_CKPT="$R/meta_pipeline_clean_metacmp_${BB}/meta_on_base_calib/seed42/fold${
 ARMS=${ARMS:-"none:ProcessedData dp2s:ProcessedDP2full_per_subject dp2s_oldeye:ProcessedDP2full_per_subject_oldeye dp2f:ProcessedDP2full_per_frame dp2f_oldeye:ProcessedDP2full_per_frame_oldeye"}
 for ARM in $ARMS; do
   TAG=${ARM%%:*}; DP=$D/${ARM#*:}
-  [ -f "$DP/meanno7_clean/metadata.mat" ] || { echo "FATAL $TAG: no manifest"; continue; }
+  [ -f "$DP/${MEAN:-meanno7_clean}/metadata.mat" ] || { echo "FATAL $TAG: no manifest"; continue; }
   echo "########## draw$DRAW $BB fold$FOLD $TAG $(date +%T)"
   $CLI metacompare \
-    --data-path "$DP" --eye-path "$DP" --mean-path meanno7_clean \
+    --data-path "$DP" --eye-path "$DP" --mean-path "${MEAN:-meanno7_clean}" \
     --input-mode multistream --backbone $BB --use-grid \
     --base-checkpoint "$BASE_CKPT" --meta-checkpoint "$META_CKPT" \
     --calib-support-root "$D/calib_support_K72" \

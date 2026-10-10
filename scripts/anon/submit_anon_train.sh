@@ -30,6 +30,8 @@
 #   BACKBONES     default "affnet mgazenet mobilenet_v3"
 #   CPUS          cpus-per-task and DataLoader workers (default 16). Workers do
 #                 not change the recipe; 10 lets 15 jobs fit the 160-CPU QOS cap.
+#   MEAN          training manifest (default meanno7_clean; meanno7_clean_sub10
+#                 for the FAMS utility subsample)
 #   NICE, TIME    scheduling only
 set -euo pipefail
 REPO=/springbrook/share/eng/esrpxk/CogntiveGaze
@@ -40,7 +42,8 @@ case "${1:?swap|dp2}" in
   swap) ARMS="swap1:ProcessedSwap swap1_oldeye:ProcessedSwap_oldeye swap2:ProcessedSwap2 swap2_oldeye:ProcessedSwap2_oldeye" ;;
   dp2)  ARMS="dp2s:ProcessedDP2full_per_subject dp2s_oldeye:ProcessedDP2full_per_subject_oldeye dp2f:ProcessedDP2full_per_frame dp2f_oldeye:ProcessedDP2full_per_frame_oldeye" ;;
   dp2fb) ARMS="dp2fbs:ProcessedDP2fbfull_per_subject dp2fbs_oldeye:ProcessedDP2fbfull_per_subject_oldeye dp2fbf:ProcessedDP2fbfull_per_frame dp2fbf_oldeye:ProcessedDP2fbfull_per_frame_oldeye" ;;
-  *) echo "usage: $0 swap|dp2|dp2fb"; exit 1 ;;
+  fams) ARMS="famsf:ProcessedFAMSsub10_per_frame famsf_oldeye:ProcessedFAMSsub10_per_frame_oldeye none_sub10:ProcessedData" ;;
+  *) echo "usage: $0 swap|dp2|dp2fb|fams"; exit 1 ;;
 esac
 BACKBONES="${BACKBONES:-affnet mgazenet mobilenet_v3}"
 REP="${REP:-1}"
@@ -52,7 +55,7 @@ for ARM in $ARMS; do
   TAG=${ARM%%:*}; ROOT=$D/${ARM#*:}
   for BB in $BACKBONES; do
     OUT_ROOT="$BASE_OUT/$TAG/$BB"; mkdir -p "$OUT_ROOT"
-    JID=$(DATA_PATH="$ROOT" EYE_PATH="$ROOT" MEAN_PATH=meanno7_clean OUT_ROOT="$OUT_ROOT" \
+    JID=$(DATA_PATH="$ROOT" EYE_PATH="$ROOT" MEAN_PATH="${MEAN:-meanno7_clean}" OUT_ROOT="$OUT_ROOT" \
           BACKBONE="$BB" OUTPUT_ACTIVATION=none GAZE_RANGE=4.0 LR=1e-4 EPOCHS=20 SEEDS=42 \
           NUM_WORKERS="$CPUS" \
           sbatch --parsable --array=0-4 --partition=gpu --cpus-per-task="$CPUS" \

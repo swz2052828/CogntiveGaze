@@ -53,10 +53,27 @@ def main():
                     c["ii"] = float(np.mean([fold_mean(cond2(bb, arm, d)) for d in range(5)]))
                 except FileNotFoundError:
                     c["ii"] = None
+                draws = {}
                 for t in ("real", "anon"):
-                    p = RUNS / "anon_train" / "eval" / f"at_{arm}_{bb}_test{t}.csv"
-                    c[f"i_{t}"] = fold_mean(p) if p.is_file() else None
-                row[arm] = {k: (None if v is None else dict(err=v, penalty=v - clean.mean()))
+                    # draw 1 = original run; draws 2-5 carry a _rep<N> suffix.
+                    # Only complete draws (all five folds) are used.
+                    vals = []
+                    for rep in range(1, 6):
+                        sfx = "" if rep == 1 else f"_rep{rep}"
+                        p = RUNS / "anon_train" / "eval" / f"at_{arm}_{bb}_test{t}{sfx}.csv"
+                        if p.is_file():
+                            try:
+                                vals.append(fold_mean(p))
+                            except SystemExit:
+                                pass
+                    c[f"i_{t}"] = float(np.mean(vals)) if vals else None
+                    draws[f"i_{t}"] = vals
+                row[arm] = {k: (None if v is None else dict(
+                                err=v, penalty=v - clean.mean(),
+                                n_draws=len(draws.get(k, [])) or 5,
+                                sd=(float(np.std(draws[k], ddof=1)) if len(draws.get(k, [])) > 1
+                                    else None),
+                                draw_penalties=[d - clean.mean() for d in draws.get(k, [])]))
                             for k, v in c.items()}
             for col in ("ii", "i_real", "i_anon"):
                 f, h = row[full][col], row[hyb][col]
@@ -76,6 +93,8 @@ def main():
                     if c is None:
                         cells.append("—".rjust(22)); continue
                     s = f"{c['err']:.2f} ({c['penalty']:+.2f})"
+                    if c.get("sd") is not None:
+                        s += f"±{c['sd']:.2f}/{c['n_draws']}"
                     if "recovered_frac" in c:
                         s += f" {100 * c['recovered_frac']:.0f}%"
                     cells.append(s.rjust(22))
