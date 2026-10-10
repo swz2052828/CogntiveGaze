@@ -65,10 +65,12 @@ against the 4.9–5.9 cm baselines in Table 3.
 > still recovers exactly the right 18 people — from a 120 px ocular crop
 > containing no hair, ears, clothing or face outline. Removal by inpainting fares
 > worse: a model retrained on it is no better than predicting the screen centre.
-> Across a replacement and a removal method, the one configuration that breaks
-> linkage — repainting the whole person with a fresh identity every frame — is
-> one on which a retrained gaze model learns nothing. We state what a releasable
-> gaze corpus would require, and report what our own tiered release leaks when
+> A diffusion anonymiser does better on both axes — models retrained on it lose
+> about 0.6 cm, and it breaks per-participant consistency by itself — yet its
+> face crops still link at ARI 0.85. Across replacement, removal and diffusion,
+> the one configuration that breaks linkage — repainting the whole person with a
+> fresh identity every frame — is one on which a retrained gaze model learns
+> nothing. We state what a releasable gaze corpus would require, and report what our own tiered release leaks when
 > measured rather than assumed.
 
 If the venue caps at 250: drop "seven oculomotor tasks", the sentence on removal
@@ -173,8 +175,12 @@ dataset paper with de-identification attached.
 > 63.2% → 2.04% and linkage 0.805 [0.63, 0.94] → 0.148 [0.10, 0.27], against
 > floors of 1.57% and 0.074. The one configuration that breaks linkage repaints
 > the eyes, and a gaze model retrained on repainted eyes
-> does no better than predicting the screen centre. This tells a dataset author
-> what to do, and what it costs, not merely what fails.
+> does no better than predicting the screen centre. Each half of the condition is
+> attainable on its own — a diffusion anonymiser meets the first while keeping
+> most of the gaze signal, full-body inpainting meets both while destroying it —
+> which locates what is missing precisely: a gaze-preserving generator whose edit
+> domain covers the whole released crop. This tells a dataset author what to do,
+> and what it costs, not merely what fails.
 >
 > **CognitiveGaze, and a four-architecture utility benchmark under
 > de-identification.** 18 participants, smartphone and EyeLink 1000 recorded
@@ -693,6 +699,20 @@ distributed); the participant's released crops in those frames are changed as
 much as in all others (mean |Δ| ≥ 21 against the original in every sampled
 frame), so no original pixels reach the release.
 
+FAMS (diffusion; §8), same five initialisations, on its every-10th-frame subset
+against the real-data models evaluated on the same subset:
+
+| Model | Real Data (subset) | Full Synthetic | Hybrid |
+|---|---|---|---|
+| iTracker | 5.84 | +5.10 ± 0.17 | **+0.02 ± 0.07** |
+| MobileNet-V3 Large | 4.97 | +4.06 ± 0.24 | **+0.27 ± 0.20** |
+| AFFNet | 5.66 | +4.95 ± 0.20 | **+0.19 ± 0.10** |
+| MGazeNet | 4.96 | +4.97 ± 0.17 | **+0.36 ± 0.21** |
+
+(± over initialisations, penalties paired within draw.) Under deployment alone
+FAMS looks no better than SimSwap; Table 5 shows that retraining removes most of
+this penalty.
+
 ### 9b. Table 4 — ADD (new)
 
 Hybrid minus Full Synthetic, **paired within initialisation**, 5 draws.
@@ -761,7 +781,16 @@ mean ± SD (iTracker, ~9 h per fold, enters as a fourth column group). Same reci
 | DeepPrivacy2 full body fixed, Hybrid | **+0.33** [+0.11, +0.61] | **+0.27** [+0.03, +0.75] | **+0.23** [−0.08, +0.70] |
 | DeepPrivacy2 full body per frame, Full Synthetic | +10.82 [+9.67, +12.16] | +4.34 [+3.91, +4.61] | +4.34 [+3.88, +4.62] |
 | DeepPrivacy2 full body per frame, Hybrid | **+0.38** [+0.13, +0.63] | **−0.10** [−0.22, +0.02] | **−0.11** [−0.23, +0.00] |
+| FAMS (diffusion), Full Synthetic † | +4.66 [+4.06, +4.97] | +0.57 [−0.25, +1.19] | +1.45 [+0.81, +2.13] |
+| FAMS (diffusion), Hybrid † | **+0.27** [+0.19, +0.36] | **+0.08** [−0.14, +0.42] | **+0.06** [−0.12, +0.34] |
 | *No-information reference (predict the mean)* | *+4.17 [+3.70, +4.41]* | | |
+
+† FAMS was generated for every 10th frame (diffusion runs at ~6 s/frame), so its
+baseline is the real-data model on the same subset — evaluated on it in (ii),
+retrained on it in (i) — and its penalties are against that matched baseline. The
+subset is representative: real-data error on it matches the full data to within
+0.01–0.02 cm. **(i) is one initialisation; draws 2–5 are running** — replace these
+two rows with mean ± SD when they land.
 
 > **Retraining does not rescue full synthesis.** For SimSwap, the penalty
 > survives retraining: +2.2 to +3.4 cm when the retrained model is tested on the
@@ -792,6 +821,17 @@ mean ± SD (iTracker, ~9 h per fold, enters as a fourth column group). Same reci
 > noise floor; the exception, AFFNet on full-body DeepPrivacy2 with a fixed
 > identity (+0.75 / +0.70 cm), is a single-draw cell. The central utility finding
 > of Table 4 therefore does not depend on how the model was trained.
+>
+> **A diffusion anonymiser keeps most of the gaze signal.** FAMS looks, under
+> condition (ii), like the others: +4.1 to +5.1 cm, its absolute error close to
+> predicting the mean. Retraining shows that this is almost all domain shift. A
+> model trained on FAMS-anonymised frames and deployed on real faces is +0.57 cm
+> from one trained on the same real frames on average (−0.25 to +1.19 across
+> architectures), every fold far from the no-information level (6.1–7.2 cm
+> against 9.4). It is the only full-synthesis release we tested that a third party
+> could train a useful model on. On the privacy axis it is also the only method
+> that breaks per-participant consistency without being asked to (§8); what keeps
+> it linkable is the face crop it does not fully cover.
 >
 > **The identity regime costs nothing; the edit domain costs everything.** Once
 > models are trained on the release, resampling the synthetic identity every
@@ -938,7 +978,10 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > contains nothing the transformation does not edit — by cropping to the edit
 > domain, or by widening the edit domain to the whole person, which is the one
 > configuration we found that breaks face-crop linkage (0.297, though
-> verification survives at 36%), and which also repaints the eyes. Our per-frame experiment
+> verification survives at 36%), and which also repaints the eyes. The diffusion
+> anonymiser shows the generator half is within reach: it breaks per-participant
+> consistency while a model trained on its output stays within about 0.6 cm of
+> one trained on real data; what it lacks is coverage of the whole crop. Our per-frame experiment
 > demonstrates the mechanism but is not itself deployable — it destroys the
 > temporal coherence a gaze pipeline needs — and per-session resampling is
 > precisely what a single-session corpus cannot evaluate. The alternative of
@@ -983,8 +1026,10 @@ floor (1.57%), not "borrowed from panel a".
 > point that leaves the top row (DeepPrivacy2 full body with a fresh identity per
 > frame, ARI 0.297) is one on which a retrained gaze model learns nothing
 > (+4.34 cm, at the no-information reference). Restoring the original eyes to it
-> (square beside the star) recovers the utility and, with it, the linkage
-> (0.849).
+> (square 13) recovers the utility and, with it, the linkage (0.849). The
+> diffusion anonymiser (circle 14) is the one full-synthesis release near the
+> utility of real data (+0.57 cm), and its face crop keeps it in the linkable
+> region (0.853).
 
 **Caption, release-only linkage.**
 
