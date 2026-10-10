@@ -66,8 +66,9 @@ against the 4.9–5.9 cm baselines in Table 3.
 > containing no hair, ears, clothing or face outline. Removal by inpainting fares
 > worse: a model retrained on it is no better than predicting the screen centre.
 > A diffusion anonymiser does better on both axes — models retrained on it lose
-> about 0.6 cm, and it breaks per-participant consistency by itself — yet its
-> face crops still link at ARI 0.85. Across replacement, removal and diffusion,
+> about 0.3 cm, and it breaks per-participant consistency by itself — yet its
+> face crops still link at ARI 0.85; releasing eye landmarks instead of pixels
+> links too and carries almost no gaze signal. Across replacement, removal and diffusion,
 > the one configuration that breaks linkage — repainting the whole person with a
 > fresh identity every frame — is one on which a retrained gaze model learns
 > nothing. We state what a releasable gaze corpus would require, and report what our own tiered release leaks when
@@ -148,7 +149,10 @@ dataset paper with de-identification attached.
 > releasing genuine ocular biometrics — recovering 85–101% of the synthesis
 > penalty in *every* architecture we test, and 82–108% when the models are
 > retrained on the release, because in every case what it restores is the
-> participant's own eye pixels — and that full synthesis,
+> participant's own eye pixels. Releasing landmark geometry instead of pixels does
+> not escape this: four iris coordinates per frame still link the release (ARI
+> 0.27, verification 10% against a 1.6% floor) while predicting gaze barely better
+> than the mean. And full synthesis,
 > which does remove the correspondence to the real face, still leaves the corpus
 > exactly partitionable by individual. Because the residual channels —
 > illumination, skin tone, periocular geometry, crop scale — lie outside the edit
@@ -781,16 +785,16 @@ mean ± SD (iTracker, ~9 h per fold, enters as a fourth column group). Same reci
 | DeepPrivacy2 full body fixed, Hybrid | **+0.33** [+0.11, +0.61] | **+0.27** [+0.03, +0.75] | **+0.23** [−0.08, +0.70] |
 | DeepPrivacy2 full body per frame, Full Synthetic | +10.82 [+9.67, +12.16] | +4.34 [+3.91, +4.61] | +4.34 [+3.88, +4.62] |
 | DeepPrivacy2 full body per frame, Hybrid | **+0.38** [+0.13, +0.63] | **−0.10** [−0.22, +0.02] | **−0.11** [−0.23, +0.00] |
-| FAMS (diffusion), Full Synthetic † | +4.66 [+4.06, +4.97] | +0.57 [−0.25, +1.19] | +1.45 [+0.81, +2.13] |
-| FAMS (diffusion), Hybrid † | **+0.27** [+0.19, +0.36] | **+0.08** [−0.14, +0.42] | **+0.06** [−0.12, +0.34] |
+| FAMS (diffusion), Full Synthetic † | +4.66 [+4.06, +4.97] | +0.32 [−0.79, +1.29] | +1.17 [+0.35, +1.84] |
+| FAMS (diffusion), Hybrid † | **+0.27** [+0.19, +0.36] | **−0.05** [−0.16, +0.11] | **−0.07** [−0.18, +0.07] |
 | *No-information reference (predict the mean)* | *+4.17 [+3.70, +4.41]* | | |
 
 † FAMS was generated for every 10th frame (diffusion runs at ~6 s/frame), so its
 baseline is the real-data model on the same subset — evaluated on it in (ii),
 retrained on it in (i) — and its penalties are against that matched baseline. The
 subset is representative: real-data error on it matches the full data to within
-0.01–0.02 cm. **(i) is one initialisation; draws 2–5 are running** — replace these
-two rows with mean ± SD when they land.
+0.01–0.02 cm. FAMS rows in (i) are means over five initialisations, penalties
+paired within draw (SD 0.14–0.37 cm across architectures).
 
 > **Retraining does not rescue full synthesis.** For SimSwap, the penalty
 > survives retraining: +2.2 to +3.4 cm when the retrained model is tested on the
@@ -825,13 +829,41 @@ two rows with mean ± SD when they land.
 > **A diffusion anonymiser keeps most of the gaze signal.** FAMS looks, under
 > condition (ii), like the others: +4.1 to +5.1 cm, its absolute error close to
 > predicting the mean. Retraining shows that this is almost all domain shift. A
-> model trained on FAMS-anonymised frames and deployed on real faces is +0.57 cm
-> from one trained on the same real frames on average (−0.25 to +1.19 across
-> architectures), every fold far from the no-information level (6.1–7.2 cm
-> against 9.4). It is the only full-synthesis release we tested that a third party
-> could train a useful model on. On the privacy axis it is also the only method
-> that breaks per-participant consistency without being asked to (§8); what keeps
-> it linkable is the face crop it does not fully cover.
+> model trained on FAMS-anonymised frames and deployed on real faces is +0.32 cm
+> from one trained on the same real frames, averaged over architectures and five
+> initialisations — from +1.29 ± 0.14 (MobileNet-V3) to −0.79 ± 0.37 (AFFNet,
+> negative in all five draws) — and every fold is far from the no-information
+> level (6.1–7.2 cm against 9.4). AFFNet's gain is consistent with the per-frame
+> synthetic identity acting as identity augmentation when training data are
+> scarce (a 10% subset); we do not claim it at full scale. It is the only
+> full-synthesis release we tested that a third party could train a useful model
+> on. On the privacy axis it is also the only method that breaks per-participant
+> consistency without being asked to (§8); what keeps it linkable is the face
+> crop it does not fully cover.
+>
+> **Releasing eye geometry instead of pixels does not escape the trade-off.** The
+> obvious alternative to de-identified imagery is to release no imagery: FaceMesh
+> landmarks, from which gaze could in principle be regressed. We tested three
+> tiers, each a superset of the last, on 1,200 frames per participant spread over
+> the recording, with the same participant split and the same attacks as the
+> pixel releases (verification TAR at FAR 1e-3; linkage ARI at k = 18; floors 1.6%
+> and 0.074):
+>
+> | Released per frame | Dims | Gaze error, uncalibrated | Verification | Linkage, frame | Linkage, 10-frame window |
+> |---|---|---|---|---|---|
+> | Iris position in each eye's corner frame | 4 | 9.02 cm | 10.2% [5.7, 15.2] | 0.267 [0.22, 0.48] | 0.441 [0.35, 0.68] |
+> | + face-box position and size | 7 | 9.27 cm | 62.2% [50.9, 72.2] | 0.665 [0.54, 0.84] | 0.843 [0.71, 0.98] |
+> | + both eyelid contours | 71 | 8.31 cm | 74.3% [64.0, 82.4] | 0.761 [0.63, 0.89] | 0.914 [0.79, 0.99] |
+>
+> Predicting the mean scores 9.53 cm on these frames; the pixel models score
+> 5.0–5.9 cm. Four iris coordinates per frame carry almost no gaze signal across
+> participants at smartphone resolution — the iris moves a dozen pixels across the
+> whole screen — yet still link the release well above floor, more so once an
+> attacker pools neighbouring frames. Head position and eyelid shape are what make
+> the geometry useful, and they are constant within a session and biometric
+> respectively, so they make it linkable. Per-participant calibration lifts an
+> iris mapping to about 5.2 cm in our earlier analysis, but that requires every
+> end user to enrol, which a released training corpus cannot assume.
 >
 > **The identity regime costs nothing; the edit domain costs everything.** Once
 > models are trained on the release, resampling the synthetic identity every
@@ -980,7 +1012,7 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > configuration we found that breaks face-crop linkage (0.297, though
 > verification survives at 36%), and which also repaints the eyes. The diffusion
 > anonymiser shows the generator half is within reach: it breaks per-participant
-> consistency while a model trained on its output stays within about 0.6 cm of
+> consistency while a model trained on its output stays within about 0.3 cm of
 > one trained on real data; what it lacks is coverage of the whole crop. Our per-frame experiment
 > demonstrates the mechanism but is not itself deployable — it destroys the
 > temporal coherence a gaze pipeline needs — and per-session resampling is
@@ -1028,8 +1060,10 @@ floor (1.57%), not "borrowed from panel a".
 > (+4.34 cm, at the no-information reference). Restoring the original eyes to it
 > (square 13) recovers the utility and, with it, the linkage (0.849). The
 > diffusion anonymiser (circle 14) is the one full-synthesis release near the
-> utility of real data (+0.57 cm), and its face crop keeps it in the linkable
-> region (0.853).
+> utility of real data (+0.32 cm), and its face crop keeps it in the linkable
+> region (0.853). Diamonds: releasing FaceMesh eye geometry instead of pixels —
+> the least linkable tier (four iris coordinates, ARI 0.267) is also near the
+> no-information level.
 
 **Caption, release-only linkage.**
 

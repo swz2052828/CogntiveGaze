@@ -224,6 +224,15 @@ pts = [
     ("FAMS (diffusion), Hybrid", pen("famsf_oldeye", "i_real").mean(), face_fams[1],
      eye_mean["Original"], "s", "#2ca02c"),
 ]
+# Feature-level releases (no pixels): penalty against the real-data pixel model,
+# linkage of the released feature vectors themselves (frame level).
+feat = j("feature_release/feature_release.json")
+pix_base = float(np.mean([util[bb]["baseline"]["mean"] for bb in BBS]))
+for tier, lab, col in (("T1", "Landmarks: iris only (4-d)", "#bcbd22"),
+                       ("T2", "Landmarks: + head position (7-d)", "#7f7f7f"),
+                       ("T3", "Landmarks: + eyelid shape (71-d)", "#17becf")):
+    v = feat[tier]
+    pts.append((lab, v["utility"]["error"] - pix_base, v["privacy_frame"]["ARI"], 0.0, "D", col))
 fig, ax = plt.subplots(figsize=(12.0, 5.4))
 ax.add_patch(plt.Rectangle((-0.6, -0.02), 1.1, 0.32, color="green", alpha=0.10))
 ax.text(-0.55, 0.26, "wanted:\nprivate AND useful", color="green", fontsize=8, va="top")
@@ -242,7 +251,7 @@ for i, (lab, x, fa, ea, mk, c) in enumerate(pts, 1):
 fbx = pen("dp2fbf", "i_real").mean()
 fby = max(face[("body", "frame")], eye_mean["DP2 full body, per frame"])
 ax.annotate("12: the only configuration that breaks\nlinkage — and a model trained on it\n"
-            "is no better than predicting the mean", (fbx, fby), xytext=(-175, -30),
+            "is no better than predicting the mean", (fbx, fby), xytext=(-150, -75),
             textcoords="offset points", fontsize=7, color="purple",
             arrowprops=dict(arrowstyle="->", color="purple", lw=0.8))
 fmx = pen("famsf", "i_real").mean()
@@ -259,7 +268,7 @@ ax.set_xlim(-0.6, 6.0)
 ax.set_ylim(-0.02, 1.12)
 ax.set_xlabel("utility cost: error penalty (cm), trained on the release, tested on real faces")
 ax.set_ylabel("release linkage: ARI of the most linkable released crop")
-ax.set_title("Privacy-utility plane: circles = Full Synthetic, squares = Hybrid", fontsize=9)
+ax.set_title("Privacy-utility plane: circles = Full Synthetic, squares = Hybrid, diamonds = landmark release (no pixels)", fontsize=9)
 ax.legend(loc="center left", fontsize=7, frameon=False,
           bbox_to_anchor=(1.01, 0.5), handletextpad=0.4, labelspacing=0.55)
 fig.tight_layout()

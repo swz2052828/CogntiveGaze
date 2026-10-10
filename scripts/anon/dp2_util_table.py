@@ -30,8 +30,21 @@ def old_csv(draw, bb, arm):
     return RUNS / "initvar_utility" / f"iv_rep{draw}_{bb}_{arm}.csv"
 
 
+def _read_eval_csv(p):
+    """Concurrent array tasks append to one CSV; two can both write the header, so a
+    stray 'fold,...' row may sit mid-file. Drop it rather than let it turn the fold
+    column into strings and silently fail the completeness check."""
+    d = pd.read_csv(p)
+    d = d[pd.to_numeric(d["fold"], errors="coerce").notna()].copy()
+    for c in d.columns:
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    return d.drop_duplicates("fold", keep="last")
+
+
 def base_by_fold(path):
-    d = pd.read_csv(path).drop_duplicates("fold", keep="last").set_index("fold")
+    d = _read_eval_csv(path)
+    d["fold"] = d["fold"].astype(int)
+    d = d.set_index("fold")
     if sorted(d.index) != [0, 1, 2, 3, 4]:
         raise SystemExit(f"{path}: folds {sorted(d.index)}, expected 0-4")
     return d["base"].sort_index()

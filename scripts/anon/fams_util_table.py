@@ -20,11 +20,25 @@ OUT = Path("/springbrook/share/eng/esrpxk/results/anon_fams/util_table.json")
 ARMS = ["famsf", "famsf_oldeye"]
 
 
+def _read_eval_csv(p):
+    """Concurrent array tasks append to one CSV; two can both write the header, so a
+    stray 'fold,...' row may sit mid-file. Drop it rather than let it turn the fold
+    column into strings and silently fail the completeness check."""
+    d = pd.read_csv(p)
+    d = d[pd.to_numeric(d["fold"], errors="coerce").notna()].copy()
+    for c in d.columns:
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    return d.drop_duplicates("fold", keep="last")
+
+
 def fold_mean(p):
     if not p.is_file():
         return None
-    d = pd.read_csv(p).drop_duplicates("fold", keep="last")
-    return float(d["base"].mean()) if sorted(d["fold"]) == [0, 1, 2, 3, 4] else None
+    d = _read_eval_csv(p)
+    if sorted(d["fold"].astype(int)) != [0, 1, 2, 3, 4]:
+        print(f"  WARNING incomplete, skipped: {p.name} folds {sorted(d['fold'])}")
+        return None
+    return float(d["base"].mean())
 
 
 def main():

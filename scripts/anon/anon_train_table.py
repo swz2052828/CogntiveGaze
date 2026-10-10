@@ -22,9 +22,20 @@ PAIRS = [("swap1", "swap1_oldeye"), ("swap2", "swap2_oldeye"),
          ("dp2fbs", "dp2fbs_oldeye"), ("dp2fbf", "dp2fbf_oldeye")]
 
 
+def _read_eval_csv(p):
+    """Concurrent array tasks append to one CSV; two can both write the header, so a
+    stray 'fold,...' row may sit mid-file. Drop it rather than let it turn the fold
+    column into strings and silently fail the completeness check."""
+    d = pd.read_csv(p)
+    d = d[pd.to_numeric(d["fold"], errors="coerce").notna()].copy()
+    for c in d.columns:
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    return d.drop_duplicates("fold", keep="last")
+
+
 def fold_mean(path):
-    d = pd.read_csv(path).drop_duplicates("fold", keep="last")
-    if sorted(d["fold"]) != [0, 1, 2, 3, 4]:
+    d = _read_eval_csv(path)
+    if sorted(d["fold"].astype(int)) != [0, 1, 2, 3, 4]:
         raise SystemExit(f"{path}: folds {sorted(d['fold'])}, expected 0-4")
     return float(d["base"].mean())
 
