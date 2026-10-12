@@ -65,9 +65,10 @@ against the 4.9–5.9 cm baselines in Table 3.
 > still recovers exactly the right 18 people — from a 120 px ocular crop
 > containing no hair, ears, clothing or face outline. Removal by inpainting fares
 > worse: a model retrained on it is no better than predicting the screen centre.
-> A diffusion anonymiser does better on both axes — models retrained on it lose
-> about 0.3 cm, and it breaks per-participant consistency by itself — yet its
-> face crops still link at ARI 0.85; releasing eye landmarks instead of pixels
+> A diffusion anonymiser does better on both axes — on a matched frame subset,
+> models retrained on it lose 0.3 cm where SimSwap loses 3.3, and it breaks
+> per-participant consistency by itself — yet its face crops still link at ARI
+> 0.85; releasing eye landmarks instead of pixels
 > links too and carries almost no gaze signal. Across replacement, removal and diffusion,
 > the one configuration that breaks linkage — repainting the whole person with a
 > fresh identity every frame — is one on which a retrained gaze model learns
@@ -788,14 +789,23 @@ and will enter as a fourth architecture (~9 h per fold). Same recipe and partici
 | DeepPrivacy2 full body per frame, Hybrid | **+0.38** [+0.13, +0.63] | **−0.05** [−0.15, +0.05] | **−0.05** [−0.14, +0.05] |
 | FAMS (diffusion), Full Synthetic † | +4.66 [+4.06, +4.97] | +0.32 [−0.79, +1.29] | +1.17 [+0.35, +1.84] |
 | FAMS (diffusion), Hybrid † | **+0.27** [+0.19, +0.36] | **−0.05** [−0.16, +0.11] | **−0.07** [−0.18, +0.07] |
+| *SimSwap A, Full Synthetic, same 10% subset* † | — | *+3.26 [+2.16, +4.46]* | *+1.77 [+0.73, +2.31]* |
+| *DeepPrivacy2 fixed, Full Synthetic, same 10% subset* † | — | *+3.46 [+2.60, +4.23]* | *+3.48 [+2.61, +4.22]* |
 | *No-information reference (predict the mean)* | *+4.17 [+3.70, +4.41]* | | |
 
 † FAMS was generated for every 10th frame (diffusion runs at ~6 s/frame), so its
 baseline is the real-data model on the same subset — evaluated on it in (ii),
 retrained on it in (i) — and its penalties are against that matched baseline. The
 subset is representative: real-data error on it matches the full data to within
-0.01–0.02 cm. FAMS rows in (i) are means over five initialisations, penalties
-paired within draw (SD 0.14–0.37 cm across architectures).
+0.01–0.02 cm. All † rows in (i) are means over five initialisations, penalties
+paired within draw against the real-data model retrained on the same subset.
+The two italic rows are the control for training-set size: SimSwap and
+DeepPrivacy2 retrained on exactly the FAMS frames. Subsampling compresses their
+penalties somewhat (SimSwap A +3.83 → +3.26 cm on real faces), because the
+real-data model trained on 10% of the frames is itself weaker; FAMS beats both in
+every one of 15 paired draws (architecture × initialisation), by 2.94 cm against
+SimSwap and 3.15 cm against DeepPrivacy2 on average. The † rows are comparable with
+each other, not with the full-data rows above.
 
 > **Retraining does not rescue full synthesis.** For SimSwap, the penalty
 > survives retraining: +2.2 to +3.1 cm when the retrained model is tested on the
@@ -829,12 +839,19 @@ paired within draw (SD 0.14–0.37 cm across architectures).
 >
 > **A diffusion anonymiser keeps most of the gaze signal.** FAMS looks, under
 > condition (ii), like the others: +4.1 to +5.1 cm, its absolute error close to
-> predicting the mean. Retraining shows that this is almost all domain shift. A
-> model trained on FAMS-anonymised frames and deployed on real faces is +0.32 cm
-> from one trained on the same real frames, averaged over architectures and five
-> initialisations — from +1.29 ± 0.14 (MobileNet-V3) to −0.79 ± 0.37 (AFFNet,
-> negative in all five draws) — and every fold is far from the no-information
-> level (6.1–7.2 cm against 9.4). AFFNet's gain is consistent with the per-frame
+> predicting the mean. Retraining shows that this is almost all domain shift.
+> Because diffusion runs at about 6 s per frame, FAMS was generated for every 10th
+> frame, and every comparison below is on that subset, against models retrained
+> on the same frames. A model trained on FAMS-anonymised frames and deployed on
+> real faces is +0.32 cm from one trained on the same real frames, averaged over
+> architectures and five initialisations — from +1.29 ± 0.14 (MobileNet-V3) to
+> −0.79 ± 0.37 (AFFNet, negative in all five draws) — and every fold is far from
+> the no-information level (6.1–7.2 cm against 9.4). The subset is not what makes
+> FAMS look good: SimSwap and DeepPrivacy2 retrained on exactly the same frames
+> lose +3.26 and +3.46 cm, and FAMS beats both in all 15 paired draws (by 2.94 and
+> 3.15 cm on average). Subsampling does compress penalties — SimSwap's falls from
+> +3.83 cm at full scale — so the 0.32 cm should be read as "on a 10% subset" and
+> not extrapolated to full-data training. AFFNet's gain is consistent with the per-frame
 > synthetic identity acting as identity augmentation when training data are
 > scarce (a 10% subset); we do not claim it at full scale. It is the only
 > full-synthesis release we tested that a third party could train a useful model
@@ -1013,7 +1030,7 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > verification survives at 36%), and which also repaints the eyes. The diffusion
 > anonymiser shows the generator half is within reach: it breaks per-participant
 > consistency while a model trained on its output stays within about 0.3 cm of
-> one trained on real data; what it lacks is coverage of the whole crop. Our per-frame experiment
+> one trained on the same real frames, against 3.3 cm for SimSwap on that subset; what it lacks is coverage of the whole crop. Our per-frame experiment
 > demonstrates the mechanism but is not itself deployable — it destroys the
 > temporal coherence a gaze pipeline needs — and per-session resampling is
 > precisely what a single-session corpus cannot evaluate. The alternative of
@@ -1060,7 +1077,8 @@ floor (1.57%), not "borrowed from panel a".
 > (+4.34 cm, at the no-information reference). Restoring the original eyes to it
 > (square 13) recovers the utility and, with it, the linkage (0.849). The
 > diffusion anonymiser (circle 14) is the one full-synthesis release near the
-> utility of real data (+0.32 cm), and its face crop keeps it in the linkable
+> utility of real data (+0.32 cm, measured on a 10% frame subset against a
+> matched baseline; SimSwap and DeepPrivacy2 on that subset: +3.26 and +3.46 cm), and its face crop keeps it in the linkable
 > region (0.853). Diamonds: releasing FaceMesh eye geometry instead of pixels —
 > the least linkable tier (four iris coordinates, ARI 0.267) is also near the
 > no-information level.

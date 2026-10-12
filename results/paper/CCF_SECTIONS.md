@@ -241,6 +241,7 @@ sections use plus one sentence.
 | "Methods with a wider edit domain remain to be tested" | Tested: DeepPrivacy2 face and full body |
 | Hybrid recovers "86–108%" / "82–108%" after retraining | Single-draw figures; five draws give 91–106% (the 82% AFFNet cell was noise: +0.15 ± 0.39) |
 | Identity resampling "costs at most 0.31 cm" | Five draws: −0.63 to +0.19 cm, never worse by more than 0.19 |
+| FAMS "loses about 0.3 cm" vs SimSwap's full-data penalty | Not like-for-like (10% vs full). Matched-subset control: SimSwap +3.26, DP2 +3.46, FAMS +0.32; FAMS better in 15/15 paired draws. Always say "on a 10% subset" |
 | DP2 retrained "never better than the mean" (120/120) | Five draws: 580 of 600 folds at or above it, none more than 0.17 cm below |
 | Eye-ROI ARI 0.795 (DP2 face, fixed) | Single fit; bootstrap point estimate 0.805 |
 
