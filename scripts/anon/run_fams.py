@@ -85,6 +85,9 @@ def main():
                     help="every frame in the geometry table (overrides --n-per-subject)")
     ap.add_argument("--every", type=int, default=1,
                     help="with --all-frames, keep every k-th frame (utility subsample)")
+    ap.add_argument("--offset", type=int, default=0,
+                    help="with --all-frames, start at this frame position (split one "
+                         "recording across tasks: --every 3 --offset 0/1/2)")
     ap.add_argument("--recs", nargs="+", default=None)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--report", default=None)
@@ -106,7 +109,7 @@ def main():
         src_dir = DATA / "OriginalData" / rec
         avail = [n for n in names if (src_dir / n).is_file()]
         if args.all_frames:
-            pick = names[::args.every]
+            pick = names[args.offset::args.every]
         else:
             # same draw as run_deepprivacy2.py so the two families see the same frames
             pick = sorted(rng.choice(avail, size=args.n_per_subject, replace=False).tolist())

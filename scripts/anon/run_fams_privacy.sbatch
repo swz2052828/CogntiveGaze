@@ -25,7 +25,7 @@ PYF=/springbrook/share/eng/esrpxk/envs/fams/bin/python
 MODES=(per_subject per_frame)
 RECS=(00006 00007 00008 00009 00010 00011 00012 00013 00014 00015 00016 00017 00018 00019 00020 00021 00022 00023)
 
-case "${MODE:?smoke|gen|utilgen|attack}" in
+case "${MODE:?smoke|gen|utilgen|fullgen|attack}" in
 smoke)
   for M in per_subject per_frame; do
     SECONDS=0
@@ -48,6 +48,16 @@ utilgen)
       --out-root "$D/ProcessedFAMSsub10_per_frame" --report "$R/edit_util_${REC}.json" \
       || { echo "FAILED util $REC"; exit 1; }
   echo "ALL_DONE util $REC" ;;
+fullgen)
+  # Every frame, per_frame identity: 3 tasks per recording (positions 0/1/2 mod 3).
+  # Frames already generated for the 10% subset are hard-linked in beforehand and
+  # skipped by --resume; the per-frame seed depends only on (rec, frame), so they
+  # are the frames this run would have drawn.
+  REC=${RECS[$(( SLURM_ARRAY_TASK_ID / 3 ))]}; OFF=$(( SLURM_ARRAY_TASK_ID % 3 ))
+  $PYF scripts/anon/run_fams.py --identity per_frame --recs $REC --all-frames --every 3 --offset $OFF \
+      --resume --out-root "$D/ProcessedFAMSfull_per_frame" --report "$R/edit_full_${REC}_${OFF}.json" \
+      || { echo "FAILED full $REC $OFF"; exit 1; }
+  echo "ALL_DONE full $REC $OFF" ;;
 attack)
   PY=/springbrook/share/eng/esrpxk/envs/gaze/bin/python
   PY_ARC=/springbrook/share/eng/esrpxk/envs/idattack/bin/python

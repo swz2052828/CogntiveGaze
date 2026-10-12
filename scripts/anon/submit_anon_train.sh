@@ -42,10 +42,11 @@ case "${1:?swap|dp2}" in
   swap) ARMS="swap1:ProcessedSwap swap1_oldeye:ProcessedSwap_oldeye swap2:ProcessedSwap2 swap2_oldeye:ProcessedSwap2_oldeye" ;;
   dp2)  ARMS="dp2s:ProcessedDP2full_per_subject dp2s_oldeye:ProcessedDP2full_per_subject_oldeye dp2f:ProcessedDP2full_per_frame dp2f_oldeye:ProcessedDP2full_per_frame_oldeye" ;;
   dp2fb) ARMS="dp2fbs:ProcessedDP2fbfull_per_subject dp2fbs_oldeye:ProcessedDP2fbfull_per_subject_oldeye dp2fbf:ProcessedDP2fbfull_per_frame dp2fbf_oldeye:ProcessedDP2fbfull_per_frame_oldeye" ;;
+  famsfull) ARMS="famsF:ProcessedFAMSfull_per_frame famsF_oldeye:ProcessedFAMSfull_per_frame_oldeye" ;;
   # Control for the FAMS 10%-subset result: the same subset, other methods.
   sub10ctl) ARMS="swap1_sub10:ProcessedSwap dp2s_sub10:ProcessedDP2full_per_subject" ;;
   fams) ARMS="famsf:ProcessedFAMSsub10_per_frame famsf_oldeye:ProcessedFAMSsub10_per_frame_oldeye none_sub10:ProcessedData" ;;
-  *) echo "usage: $0 swap|dp2|dp2fb|fams|sub10ctl"; exit 1 ;;
+  *) echo "usage: $0 swap|dp2|dp2fb|fams|famsfull|sub10ctl"; exit 1 ;;
 esac
 BACKBONES="${BACKBONES:-affnet mgazenet mobilenet_v3}"
 REP="${REP:-1}"

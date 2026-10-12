@@ -770,8 +770,8 @@ Large, AFFNet and MGazeNet, [min, max] across the three. Condition (ii) is
 recomputed over the same three backbones so the columns are comparable.
 Condition (i) is the mean over five independent initialisations per cell, the
 penalty taken against the five-draw real-data mean (per-draw SDs 0.01–0.83 cm, in
-`results/anon_train/table3_three_conditions.json`). An iTracker draw is running
-and will enter as a fourth architecture (~9 h per fold). Same recipe and participant partition as the real-data models.
+`results/anon_train/table3_three_conditions.json`). iTracker (~9 h per fold) was
+retrained once per arm and is reported separately below. Same recipe and participant partition as the real-data models.
 
 | Arm | (ii) train real, test de-id | (i) train de-id, test real | (i) train de-id, test de-id |
 |---|---|---|---|
@@ -893,8 +893,28 @@ each other, not with the full-data rows above.
 > repainting everything the crop contains, eyes included, is what §8 found
 > necessary to break face-crop linkage.
 
-Caveats to keep beside Table 5: three of four architectures (iTracker running);
-Hybrid's negative values read as "indistinguishable from baseline", not as gains.
+**iTracker, condition (i), one initialisation** (penalty against its five-draw
+real-data baseline, 5.85 cm; predicting the mean = +3.52 cm):
+
+| Arm | (ii) | (i) test real | (i) test de-id |
+|---|---|---|---|
+| SimSwap A, Full Synthetic / Hybrid | +3.00 / **+0.31** | +7.50 / **−0.10** | +3.01 / **+0.00** |
+| SimSwap B, Full Synthetic / Hybrid | +3.62 / **−0.03** | +12.05 / **+0.62** | +4.38 / **+0.43** |
+| DeepPrivacy2 fixed, Full Synthetic / Hybrid | +10.58 / **−0.10** | +3.77 / **−0.14** | +3.78 / **−0.07** |
+| DeepPrivacy2 per frame, Full Synthetic / Hybrid | +11.65 / **−0.02** | +3.61 / **−0.29** | +3.62 / **−0.28** |
+| DeepPrivacy2 full body fixed, Full Synthetic / Hybrid | +10.06 / **+0.16** | +3.77 / **−0.22** | +4.07 / **−0.25** |
+| DeepPrivacy2 full body per frame, Full Synthetic / Hybrid | +11.27 / **+0.11** | +3.65 / **−0.16** | +3.71 / **−0.17** |
+
+> The fourth architecture agrees with the other three, and sharpens one point.
+> DeepPrivacy2 again retrains to the no-information level (+3.6 to +4.1 against
+> +3.52) and Hybrid again sits at baseline (−0.29 to +0.62). Trained on SimSwap and
+> deployed on real faces, iTracker is *worse than predicting the mean* — +7.5 and
+> +12.1 cm, every fold between 10.6 and 29.6 cm against 9.4 — while it fits the
+> synthetic training set normally: it learns the synthetic faces and fails to
+> transfer to real ones. A Full Synthetic SimSwap release can therefore be worse
+> than useless to a third party, depending on their architecture.
+
+Caveats to keep beside Table 5: Hybrid's negative values read as "indistinguishable from baseline", not as gains.
 Fold 2 is hard for every model, real-data included (7.3–8.5 cm), which compresses
 all penalties there; tested on the release, the SimSwap Full Synthetic penalty is
 positive in 148 of 150 fold-level cells (2 templates × 3 backbones × 5 folds × 5
@@ -1018,8 +1038,8 @@ Note also that the current Table 3 and Table 6 disagree on iTracker
 > frame; in 1.4% of frames a second person region took the unmapped path and was
 > left unedited, outside the released crops. On footage with more people, or
 > people DensePose cannot map, that path would release them unedited. Retraining on the release was
-> run for three of the four architectures (five initialisations each; iTracker
-> pending at submission), and FAMS only on a 10% frame subset against a matched
+> run with five initialisations for three architectures and one for iTracker
+> (about 9 h per fold), and FAMS only on a 10% frame subset against a matched
 > baseline.
 >
 > A deployable route must satisfy both halves of the condition we establish:
