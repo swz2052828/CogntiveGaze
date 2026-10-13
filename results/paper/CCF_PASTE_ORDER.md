@@ -705,19 +705,24 @@ distributed); the participant's released crops in those frames are changed as
 much as in all others (mean |Δ| ≥ 21 against the original in every sampled
 frame), so no original pixels reach the release.
 
-FAMS (diffusion; §8), same five initialisations, on its every-10th-frame subset
-against the real-data models evaluated on the same subset:
+FAMS (diffusion; §8), same five initialisations, on every task frame (full
+generation, 210,924 frames, none undetected):
 
-| Model | Real Data (subset) | Full Synthetic | Hybrid |
+| Model | Real Data | Full Synthetic | Hybrid |
 |---|---|---|---|
-| iTracker | 5.84 | +5.10 ± 0.17 | **+0.02 ± 0.07** |
-| MobileNet-V3 Large | 4.97 | +4.06 ± 0.24 | **+0.27 ± 0.20** |
-| AFFNet | 5.66 | +4.95 ± 0.20 | **+0.19 ± 0.10** |
-| MGazeNet | 4.96 | +4.97 ± 0.17 | **+0.36 ± 0.21** |
+| iTracker | 5.85 ± 0.14 | +5.06 ± 0.17 | **+0.02 ± 0.07** |
+| MobileNet-V3 Large | 4.98 ± 0.13 | +4.06 ± 0.24 | **+0.27 ± 0.20** |
+| AFFNet | 5.67 ± 0.20 | +4.91 ± 0.20 | **+0.19 ± 0.10** |
+| MGazeNet | 4.96 ± 0.04 | +4.94 ± 0.17 | **+0.35 ± 0.21** |
 
-(± over initialisations, penalties paired within draw.) Under deployment alone
-FAMS looks no better than SimSwap; Table 5 shows that retraining removes most of
-this penalty.
+(± over initialisations.) Under deployment alone FAMS looks worse than SimSwap
+(+2.4 to +3.7 cm); Hybrid recovers 93–100%. These match the earlier 10%-subset
+evaluation to within 0.04 cm, so the subset was representative on the test side.
+Table 5 shows what retraining does to this penalty.
+
+**⚠ PENDING (2026-10-13):** condition (i) for FAMS is being re-run on all frames
+(five initialisations). Table 5's FAMS rows, the FAMS sentences in the Abstract,
+§9c-ter, §9.5 and §10 still carry the 10%-subset numbers and will be replaced.
 
 ### 9b. Table 4 — ADD (new)
 
