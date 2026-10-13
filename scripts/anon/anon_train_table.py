@@ -19,7 +19,8 @@ RUNS = Path("/springbrook/share/eng/esrpxk/runs")
 BBS = ["mobilenet_v3", "affnet", "mgazenet"]
 PAIRS = [("swap1", "swap1_oldeye"), ("swap2", "swap2_oldeye"),
          ("dp2s", "dp2s_oldeye"), ("dp2f", "dp2f_oldeye"),
-         ("dp2fbs", "dp2fbs_oldeye"), ("dp2fbf", "dp2fbf_oldeye")]
+         ("dp2fbs", "dp2fbs_oldeye"), ("dp2fbf", "dp2fbf_oldeye"),
+         ("famsF", "famsF_oldeye")]      # FAMS on all frames (famsf = 10% subset, see fams_util_table.py)
 
 
 def _read_eval_csv(p):
@@ -41,7 +42,7 @@ def fold_mean(path):
 
 
 def cond2(bb, arm, draw):
-    if arm.startswith("dp2"):
+    if arm.startswith(("dp2", "famsF")):
         return RUNS / "dp2_utility" / f"dp2_d{draw}_{bb}_{arm}.csv"
     if draw == 0:
         return RUNS / "anon_swap_utility" / f"su_{bb}_{arm}.csv"
