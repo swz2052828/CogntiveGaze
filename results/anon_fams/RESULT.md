@@ -110,3 +110,15 @@ still 2–4x smaller than SimSwap's. Test-anon > test-real for FAMS only (SimSwa
 and DP2 are equal across test sets): a model trained on FAMS is less accurate on
 FAMS crops than on real faces. AFFNet Hybrid +0.43 (single draw) exceeds its FS
 penalty; do not interpret before 5 draws.
+
+### Update: draws 1–3 (2026-10-13)
+
+| backbone | FS test real | FS test anon | Hybrid test real | Hybrid test anon |
+|---|---|---|---|---|
+| MobileNet-V3 | +1.15 ± 0.02 | +2.63 ± 0.15 | −0.08 ± 0.11 | −0.10 ± 0.13 |
+| AFFNet | +0.28 ± 0.21 | +1.52 ± 0.16 | +0.15 ± 0.25 | +0.14 ± 0.24 |
+| MGazeNet | +1.27 ± 0.07 | +2.33 ± 0.08 | +0.01 ± 0.26 | +0.02 ± 0.25 |
+
+Draw-1 AFFNet Hybrid anomaly (+0.43) was init noise. AFFNet FS (+0.28) is within
+the clean baseline's SD (0.20) x 1.5 -- not distinguishable from no penalty.
+Test-anon > test-real holds on all three backbones across draws.
