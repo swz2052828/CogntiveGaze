@@ -22,19 +22,19 @@ pseudonymised.
 
 ---
 
-## 0. Title — CHECK
+## 0. Title — DECIDED (2026-10-13)
 
-The current title, *Recovering Gaze Utility under Face De-identification: A
-Smartphone Dataset and High-Precision Benchmark*, emphasises the half that turns
-out to be easy: utility recovery is uniform across all four architectures. The
-result is the other half. Two options that fit the finding:
+> **Keep Your Eyes On It: Measuring Gaze Utility and Re-identification Risk in
+> De-identified Smartphone Gaze Data**
 
-- *The Eyes You Keep: Gaze Utility and Identity Leakage Are the Same Pixels*
-- *What Face Swapping Does Not Anonymise: Measuring De-identification for Gaze Datasets*
-
-If "High-Precision Benchmark" stays, say explicitly that it refers to the EyeLink
-ground truth, not to the smartphone estimates — otherwise a reviewer checks it
-against the 4.9–5.9 cm baselines in Table 3.
+Replaces *Recovering Gaze Utility under Face De-identification: A Smartphone
+Dataset and High-Precision Benchmark*. The main title is a deliberate pun: watch
+the screen (gaze), stay vigilant before release (the audit), and keeping your own
+eyes keeps your identity (the central result). The subtitle names what is
+measured; "Dataset" and "Benchmark" are dropped so the paper is not reviewed as a
+dataset paper. The abstract's key sentence ("The eye pixels that make gaze
+estimation work are the pixels that identify") carries the third reading.
+Title case: "On It" both capitalised; "in" lower case.
 
 ---
 
@@ -59,7 +59,7 @@ against the 4.9–5.9 cm baselines in Table 3.
 > 85–101% of the synthesis penalty in every architecture, and 91–106% when the
 > models are retrained on the release — yet those same crops verify identity at
 > 62–80% TAR at FAR 1e-3 against a measured 1.6% floor, under two unrelated
-> recognisers. The pixels that make the protocol work are the pixels that
+> recognisers. The eye pixels that make gaze estimation work are the pixels that
 > identify. Full synthesis does break the link to the real face, but costs
 > 2.2–6.2 cm even after retraining, and an attacker holding only the release
 > still recovers exactly the right 18 people — from a 120 px ocular crop
@@ -1202,7 +1202,8 @@ floor (1.57%), not "borrowed from panel a".
 
 1. **CHECK** whether *Practical Digital Disguises* runs a linkage attack (§3).
 2. **CHECK** the cohort count and demographics (§4).
-3. **DECIDE** the title (§0).
+3. ~~**DECIDE** the title (§0).~~ Done 2026-10-13: *Keep Your Eyes On It: Measuring
+   Gaze Utility and Re-identification Risk in De-identified Smartphone Gaze Data*.
 4. ~~**WAIT** for the initialisation-variance replication before pasting Table 3.~~
    Done (2026-09-20); Table 3 is final.
 5. ~~**CHECK** the DeepPrivacy2 quotations and numbers against the WACV PDF.~~
