@@ -62,6 +62,15 @@ modalities; the evidence does not reach them.
 > We release the measurements as a tool, `privaudit`, and a fifteen-item checklist,
 > so that a gaze dataset can be audited against the attacks and floors used here
 > before it is shared; the tool reproduces every eye-ROI result in this paper.
+>
+> In the terms of the cycle in §1, this paper does not break it, and we do not
+> claim to. Our own corpus ends where the cycle predicts — under controlled
+> access — because no de-identification we measured yields a release that is
+> both unlinkable and useful. What changes is the step at which the next group
+> decides: instead of assuming that a de-identified release is safe, or that it is
+> useless, a dataset author can measure both before publishing, and a generator
+> developer knows what a gaze-preserving method must achieve (§9.6) for the
+> cycle to open.
 
 ## 9.6 Design Guidelines for Releasing Gaze Data — INSERT (new section)
 

@@ -95,7 +95,40 @@ by inpainting, and the final clause about the tiered release.
 > artefact. The result is a field whose progress depends on shared corpora and
 > whose corpora cannot be shared.
 >
-> One proposed answer is generative de-identification: replace the face, keep the
+> The consequence is a cycle that reproduces its own scarcity (Figure 1).
+> Researchers who want to study gaze on smartphones find few public corpora that
+> record the face under conditions they can use, so they build on the same few —
+> GazeCapture above all [CITE: krafka16] — and their study designs inherit those
+> corpora's assumptions: a hand-held phone, a small screen with the camera above
+> it, a viewing distance of a few tens of centimetres, and the position of an
+> on-screen target standing in for measured gaze. Newer datasets adopt the same
+> protocol to remain comparable [CITE: zjugaze, dynamicgaze], so the assumptions
+> harden into the benchmark. Clinical oculomotor protocols break most of them —
+> stimuli span a large display viewed from a metre away, and the quantity of
+> interest is the gaze trajectory rather than the location of a target — and
+> whether models developed under the hand-held protocol transfer to them is
+> largely untested. Clinical groups that do record such data hold it in
+> separate silos, so there is no common reference against which analysis choices
+> can be checked, and those choices multiply [CITE: simmons11, carp12]. A group
+> that records the data a clinical question needs then wants to release it, and
+> meets the privacy problem. Face video of a study participant is personal data,
+> and in a clinical study also health data, a special category under the GDPR
+> [CITE: gdpr]; full-face photographs and comparable images are among the
+> identifiers HIPAA requires to be removed [CITE: hipaa]. None of the standard
+> exits yields a corpus the next group can use. Blurring or masking the face
+> removes the geometry a gaze model reads [CITE: blurmask, disguises].
+> Computation on data that stays with its holder — homomorphic encryption,
+> federated learning — leaves the data where it is and produces no shared
+> benchmark, at a computational cost that is prohibitive for video
+> [CITE: acar18he, kairouz21fl]. Controlled access, the usual compromise, admits
+> only those who can apply to and sign an agreement with the holding institution.
+> The corpus stays unreleased or restricted, and the next group looking for
+> usable public data finds the same few corpora. The cycle closes.
+>
+> It has one step at which it could break without giving up release: a
+> transformation that removes identity and keeps the gaze signal would let a
+> clinical gaze corpus be shared openly. Generative de-identification is the
+> proposed candidate: replace the face, keep the
 > behaviour. Face swapping is attractive here because it is meant to preserve the
 > geometry — head pose, eyelid aperture, iris position — that a gaze model reads,
 > where methods that inpaint the ocular region destroy it. It has been applied to
@@ -127,7 +160,10 @@ by inpainting, and the final clause about the tiered release.
 > synchronised to the frame, so that each smartphone frame carries a
 > physiological ground-truth gaze coordinate rather than a screen-target label.
 > That is what makes a sub-centimetre difference on the utility axis
-> interpretable. On the privacy axis we adopt the discipline of the security
+> interpretable. The protocol is deliberately not GazeCapture's: stimuli appear
+> on a 53 × 30 cm display viewed from 80–120 cm, not on the phone's own screen,
+> and they are clinical oculomotor tasks — the kind of corpus the cycle above
+> keeps unreleased. On the privacy axis we adopt the discipline of the security
 > literature: a stated attacker, a pretrained recogniser never trained on our
 > data, a second recogniser family as a cross-check, and a session-nuisance
 > control that establishes what "no identity signal" scores on single-session
@@ -1071,6 +1107,15 @@ modalities; the evidence does not reach them.
 > We release the measurements as a tool, `privaudit`, and a fifteen-item checklist,
 > so that a gaze dataset can be audited against the attacks and floors used here
 > before it is shared; the tool reproduces every eye-ROI result in this paper.
+>
+> In the terms of the cycle in §1, this paper does not break it, and we do not
+> claim to. Our own corpus ends where the cycle predicts — under controlled
+> access — because no de-identification we measured yields a release that is
+> both unlinkable and useful. What changes is the step at which the next group
+> decides: instead of assuming that a de-identified release is safe, or that it is
+> useless, a dataset author can measure both before publishing, and a generator
+> developer knows what a gaze-preserving method must achieve (§9.6) for the
+> cycle to open.
 
 ## 9.6 Design Guidelines for Releasing Gaze Data — INSERT (new section)
 
@@ -1140,10 +1185,25 @@ All in `results/paper/figs_core/` (PNG + PDF), generated from result files by
 
 | Figure | File | Shows | Placement |
 |---|---|---|---|
+| Data-scarcity cycle | `fig_cycle.pdf` | the six-step cycle of §1 and where it could break | **main text, Figure 1** (§1, introduction) |
 | Privacy–utility plane | `fig_core3_tradeoff.pdf` | every arm on one plane; the "private and useful" corner is empty | **main text, the one privacy figure** (§9, after Table 5) |
 | Release-only linkage | `fig_core1_privacy.pdf` | (a) the 2×2 on the face crop; (b) eye-ROI linkage with CIs | main text if a second figure fits (§8); otherwise supplement |
 | Utility under three conditions | `fig_core2_utility.pdf` | Full Synthetic vs Hybrid penalty, (ii) / (i)-real / (i)-de-id | supplement; Table 5 carries the numbers |
 | Two attackers | `fig3_threat_models.pdf` | same crops, A1 vs A2, 0.2% → 43% | supplement (was the main privacy figure) |
+
+**Caption, Figure 1 (data-scarcity cycle).**
+
+> The data-scarcity cycle in smartphone gaze research. Few public corpora record
+> the face under conditions a study can use (1), so study designs converge on the
+> same corpora and inherit their protocol (2). Groups that record data for a
+> clinical question (3) cannot release it, because face video is personal and
+> health data (4), and the standard exits do not yield a usable public corpus:
+> blurring or masking removes the gaze geometry, computation on data that stays
+> with its holder produces no shared benchmark, and controlled access restricts
+> who can use it (5). The corpus stays unreleased or restricted, and the next
+> group faces the same scarcity (6). A de-identification that removes identity
+> and keeps gaze would break the cycle at step 5; this paper measures whether any
+> current method does.
 
 The plane replaces the threat-model figure in the main text: it carries the
 paper's conclusion in one panel, where the threat-model figure carries a
@@ -1206,6 +1266,20 @@ floor (1.57%), not "borrowed from panel a".
    2026-10-14. Muştu & Ekenel (arXiv 2505.20985, DSP 2025) checked: anonymity is
    ArcFace similarity and retrieval against the ORIGINAL identities (A1-style);
    no linkage, no gaze — consistent with how §3 describes it.
+1c. **CITE keys for the data-scarcity cycle (§1), 2026-10-14.** From the
+   previous manuscript: `zjugaze` = old [25], `dynamicgaze` = old [24],
+   `blurmask` = old [27], `gdpr`/`hipaa` = old [26] (split it into the two
+   regulations; HIPAA's Safe Harbor list names "full-face photographs and any
+   comparable images"). **Verify** that ZJUGaze and DynamicGaze really use the
+   hand-held GazeCapture-style protocol; the paragraph says they do. New:
+   - `simmons11` — J. P. Simmons, L. D. Nelson, U. Simonsohn. False-positive
+     psychology. Psychological Science 22(11), 2011.
+   - `carp12` — J. Carp. On the plurality of (methodological) worlds: estimating
+     the analytic flexibility of fMRI experiments. Frontiers in Neuroscience 6, 2012.
+   - `acar18he` — A. Acar et al. A survey on homomorphic encryption schemes.
+     ACM Computing Surveys 51(4), 2018.
+   - `kairouz21fl` — P. Kairouz et al. Advances and open problems in federated
+     learning. Foundations and Trends in ML 14(1–2), 2021.
 1b. **ADD to EndNote** (new keys, 2026-10-14):
    - `wilson23gaze` — E. Wilson, F. Shic, E. Jain. Introducing Explicit Gaze
      Constraints to Face Swapping. ETRA 2023. arXiv 2305.16138.
