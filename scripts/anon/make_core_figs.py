@@ -74,18 +74,13 @@ COND = [("ii", "(ii) train real, test de-id"),
         ("i_anon", "(i) train de-id, test de-id")]
 ARMS = [("swap1", "SimSwap A"), ("swap2", "SimSwap B"),
         ("dp2s", "DP2 face,\nfixed"), ("dp2f", "DP2 face,\nper frame"),
-        ("dp2fbs", "DP2 full body,\nfixed"), ("dp2fbf", "DP2 full body,\nper frame"),
-        ("famsf", "FAMS (diffusion)\n10% subset")]
-
-
-fams = j("anon_fams/util_table.json")   # FAMS: matched 10%-subset baseline
+        ("dp2fbs", "DP2 full\nbody, fixed"), ("dp2fbf", "DP2 full\nbody, per frame"),
+        ("famsF", "FAMS\n(diffusion)")]
 
 
 def pen(arm, cond):
-    if arm.startswith("famsf"):
-        if cond == "ii":
-            return np.array([fams["ii"][bb][arm]["penalty"] for bb in BBS])
-        return np.array([fams["i"][bb][f"{arm}_{cond[2:]}"]["penalty"] for bb in BBS])
+    # FAMS (famsF) is on every frame, like the other arms; the 10%-subset run
+    # (anon_fams/util_table.json) is a robustness note, not plotted.
     return np.array([util[bb][arm][cond]["penalty"] for bb in BBS])
 
 
@@ -173,14 +168,11 @@ for ax, suffix, title in ((axes[0], "", "(a) Full Synthetic: face AND eyes de-id
     ax.set_title(title, fontsize=9)
 axes[0].legend(frameon=False, fontsize=8, loc="upper left")
 nd = sorted({util[bb][a][c]["n_draws"] for bb in BBS for a, _ in ARMS
-             if not a.startswith("famsf")
              for c in ("i_real", "i_anon") if util[bb][a].get(c)})
-nf = min(fams["i"][bb]["famsf_real"]["n_draws"] for bb in BBS)
 nd_txt = (f"{nd[0]} initialisation draw{'s' if nd[0] > 1 else ''}" if len(nd) == 1
           else f"{nd[0]}-{nd[-1]} initialisation draws")
 fig.text(0.5, -0.01, "bars: mean of MobileNet-V3, AFFNet, MGazeNet; dots: each backbone. "
-         f"(ii) uses 5 initialisation draws, (i) {nd_txt}. FAMS: 10% frame subset against a "
-         f"real-data baseline on the same subset, (i) {nf} draw{'s' if nf > 1 else ''}.",
+         f"(ii) uses 5 initialisation draws, (i) {nd_txt}.",
          ha="center", fontsize=8)
 fig.tight_layout()
 fig.savefig(OUT / "fig_core2_utility.png", dpi=200, bbox_inches="tight")
@@ -219,9 +211,9 @@ pts = [
      eye_mean["DP2 full body, per frame"], "o", "purple"),
     ("DP2 full body per-frame, Hybrid", pen("dp2fbf_oldeye", "i_real").mean(), face[("body", "frame")],
      eye_mean["Original"], "s", "purple"),
-    ("FAMS (diffusion), Full Synthetic", pen("famsf", "i_real").mean(), face_fams[1],
+    ("FAMS (diffusion), Full Synthetic", pen("famsF", "i_real").mean(), face_fams[1],
      eye_mean["FAMS (diffusion), per frame"], "o", "#2ca02c"),
-    ("FAMS (diffusion), Hybrid", pen("famsf_oldeye", "i_real").mean(), face_fams[1],
+    ("FAMS (diffusion), Hybrid", pen("famsF_oldeye", "i_real").mean(), face_fams[1],
      eye_mean["Original"], "s", "#2ca02c"),
 ]
 # Feature-level releases (no pixels): penalty against the real-data pixel model,
@@ -254,7 +246,7 @@ ax.annotate("12: the only configuration that breaks\nlinkage — and a model tra
             "is no better than predicting the mean", (fbx, fby), xytext=(-150, -75),
             textcoords="offset points", fontsize=7, color="purple",
             arrowprops=dict(arrowstyle="->", color="purple", lw=0.8))
-fmx = pen("famsf", "i_real").mean()
+fmx = pen("famsF", "i_real").mean()
 fmy = max(face_fams[1], eye_mean["FAMS (diffusion), per frame"])
 ax.annotate("14: keeps most of the gaze signal and breaks\nidentity consistency -- but leaves the face\n"
             "crop's border, pose and geometry, so it links", (fmx, fmy), xytext=(25, -62),

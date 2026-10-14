@@ -93,7 +93,7 @@ Subsampling compresses penalties (SimSwap A +3.83 full -> +3.26 subset), so FAMS
 
 ## Full-data condition (i) — PRELIMINARY, draw 1 only (2026-10-13)
 
-Models retrained on FAMS applied to every frame (`famsF`, per-subject identity),
+Models retrained on FAMS applied to every frame (`famsF`, per-frame identity),
 baseline = the 5-draw clean real-data model (same as every Table 3 arm).
 Penalty in cm; AFFNet test-real has 2 draws. Draws 2–5 still running.
 
@@ -106,9 +106,9 @@ Penalty in cm; AFFNet test-real has 2 draws. Draws 2–5 still running.
 For comparison, cond (i) test real, 5 draws: SimSwap +2.47 / +4.47 / +4.56;
 DP2 face +4.79 / +3.94 / +4.81 (no-information level). The 10%-subset matched
 control gave FAMS +0.32; on all frames the FS penalty is +0.36 to +1.25,
-still 2–4x smaller than SimSwap's. Test-anon > test-real for FAMS only (SimSwap
-and DP2 are equal across test sets): a model trained on FAMS is less accurate on
-FAMS crops than on real faces. AFFNet Hybrid +0.43 (single draw) exceeds its FS
+still 2–4x smaller than SimSwap's. Test-anon > test-real for FAMS; SimSwap goes
+the other way (test-real > test-anon) and DP2 is equal across test sets: a model
+trained on FAMS is less accurate on FAMS crops than on real faces. AFFNet Hybrid +0.43 (single draw) exceeds its FS
 penalty; do not interpret before 5 draws.
 
 ### Update: draws 1–3 (2026-10-13)
@@ -122,3 +122,18 @@ penalty; do not interpret before 5 draws.
 Draw-1 AFFNet Hybrid anomaly (+0.43) was init noise. AFFNet FS (+0.28) is within
 the clean baseline's SD (0.20) x 1.5 -- not distinguishable from no penalty.
 Test-anon > test-real holds on all three backbones across draws.
+
+### Final: five draws (2026-10-14) — in the draft (Table 5, §9c-ter, Abstract, §9.5, §10, Fig 2/3)
+
+| backbone | FS test real | FS test anon | Hybrid test real | Hybrid test anon |
+|---|---|---|---|---|
+| MobileNet-V3 | +1.15 ± 0.03 | +2.57 ± 0.13 | −0.13 ± 0.11 | −0.14 ± 0.12 |
+| AFFNet | +0.39 ± 0.21 | +1.56 ± 0.14 | +0.07 ± 0.21 | +0.06 ± 0.21 |
+| MGazeNet | +1.29 ± 0.06 | +2.30 ± 0.08 | +0.03 ± 0.19 | +0.04 ± 0.19 |
+
+Table 5 rows (mean [min, max] over the three): FS (ii) +4.64 [+4.06, +4.94],
+(i) real +0.94 [+0.39, +1.29], (i) anon +2.15 [+1.56, +2.57]; Hybrid +0.27 / −0.01 / −0.02.
+FAMS better than SimSwap A in 15/15 paired draws (mean margin 2.89 cm) and than
+DP2 face fixed in 15/15 (3.57 cm). The 10%-subset +0.32 understated the
+full-data penalty; ranking unchanged. AFFNet "identity augmentation" reading
+of the subset result does not hold at full scale (+0.39, positive in 5/5 draws).
