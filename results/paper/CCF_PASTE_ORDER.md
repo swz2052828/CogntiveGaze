@@ -42,9 +42,12 @@ Title case: "On It" both capitalised; "in" lower case.
 
 > Smartphone eye tracking moves oculomotor assessment out of the clinic, but what
 > it records is video of the participant's face — which is what blocks the
-> dataset sharing the field depends on. GAN face replacement is the common
-> answer, and recent work reports that it hides identity effectively: swap the
-> face, keep the gaze. We test that claim on both axes.
+> dataset sharing the field depends on. Face swapping has been proposed to make
+> such video shareable, and has been evaluated by whether the swapped face still
+> matches the real one and how much gaze or behaviour survives. Neither
+> evaluation asks whether the release can be linked to itself without any
+> outside reference, or what a gaze model trained on the release is worth. We
+> measure both.
 >
 > We introduce CognitiveGaze: 18 participants, seven oculomotor tasks, recorded
 > simultaneously by a smartphone and an EyeLink 1000, so every smartphone frame
@@ -92,13 +95,17 @@ by inpainting, and the final clause about the tiered release.
 > artefact. The result is a field whose progress depends on shared corpora and
 > whose corpora cannot be shared.
 >
-> The common answer is generative de-identification: replace the face, keep the
-> behaviour. Face swapping is attractive here precisely because it preserves the
+> One proposed answer is generative de-identification: replace the face, keep the
+> behaviour. Face swapping is attractive here because it is meant to preserve the
 > geometry — head pose, eyelid aperture, iris position — that a gaze model reads,
-> where methods that inpaint the ocular region destroy it. It has been proposed
-> for clinical video [CITE: disguises, digitalmask], and a recent evaluation
-> concludes that face swapping hides identity effectively enough to serve as a
-> video anonymiser [CITE: mustu25].
+> where methods that inpaint the ocular region destroy it. It has been applied to
+> clinical video of movement disorders, autism assessments and epileptic
+> seizures [CITE: zhu20deepfakes, disguises, li24seizure]; gaze is known to
+> degrade under it unless the generator is explicitly constrained to keep it
+> [CITE: wilson23gaze]; and a recent evaluation concludes that face swapping
+> hides identity effectively enough to serve as a video anonymiser
+> [CITE: mustu25] — measured, as in the work before it, by whether the swapped
+> face can be matched to the person's real face.
 >
 > We find that it does not, for gaze data, and that the reason is structural
 > rather than a shortcoming of any particular generator. Two observations drive
@@ -238,10 +245,16 @@ dataset paper with de-identification attached.
 > measure lies outside the edit domain that both families share.
 >
 > **Face swapping as a privacy mechanism.** Swapping has accordingly been
-> proposed for exactly our setting. Yang et al. build a face-swap pipeline for
+> proposed for exactly our setting. Zhu et al. swap faces in clinical movement
+> videos and show that body keypoints needed for diagnosis survive
+> [CITE: zhu20deepfakes]; Li et al. compare three swapping models, SimSwap among
+> them, on seizure videos, rated subjectively on retained semiology
+> [CITE: li24seizure]. Wilson et al. build a face-swap pipeline for
 > recorded clinical assessments and give the first privacy–utility methodology
 > for patient-privacy face swaps, measuring how far gaze and expression survive
-> relative to blurring [CITE: disguises]. A digital-mask approach was reported in
+> relative to blurring [CITE: disguises]; they then add a gaze-prediction loss to
+> the swap model, because full-face losses miss the small eye region and gaze is
+> not otherwise preserved [CITE: wilson23gaze]. A digital-mask approach was reported in
 > the clinical literature [CITE: digitalmask] and promptly contested
 > [CITE: maskconcerns], so the sufficiency of generative de-identification for
 > clinical release is an open question rather than a settled one. Most directly,
@@ -1188,6 +1201,20 @@ floor (1.57%), not "borrowed from panel a".
 ## Open items
 
 1. **CHECK** whether *Practical Digital Disguises* runs a linkage attack (§3).
+   Its authors are Wilson, Shic, Skytta and Jain (arXiv 2204.03559, 2022); an
+   earlier draft said "Yang et al." (the digital-mask authors) — corrected
+   2026-10-14. Muştu & Ekenel (arXiv 2505.20985, DSP 2025) checked: anonymity is
+   ArcFace similarity and retrieval against the ORIGINAL identities (A1-style);
+   no linkage, no gaze — consistent with how §3 describes it.
+1b. **ADD to EndNote** (new keys, 2026-10-14):
+   - `wilson23gaze` — E. Wilson, F. Shic, E. Jain. Introducing Explicit Gaze
+     Constraints to Face Swapping. ETRA 2023. arXiv 2305.16138.
+   - `zhu20deepfakes` — B. Zhu, H. Fang, Y. Sui, L. Li. Deepfakes for Medical
+     Video De-Identification: Privacy Protection and Diagnostic Information
+     Preservation. AIES 2020. arXiv 2003.00813.
+   - `li24seizure` — C.-J. Li et al. Face swapping in seizure videos for patient
+     deidentification. Epilepsy Research 207:107453, 2024.
+     doi:10.1016/j.eplepsyres.2024.107453.
 2. **CHECK** the cohort count and demographics (§4).
 3. ~~**DECIDE** the title (§0).~~ Done 2026-10-13: *Keep Your Eyes On It: Measuring
    Gaze Utility and Re-identification Risk in De-identified Smartphone Gaze Data*.
