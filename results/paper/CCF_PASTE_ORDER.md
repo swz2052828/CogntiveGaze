@@ -1221,8 +1221,9 @@ floor (1.57%), not "borrowed from panel a".
 > Synthetic; squares: Hybrid (original eyes); star: unprocessed data. Dashed
 > red: no-information reference (predicting the mean gaze point); dashed grey:
 > linkage floor. The shaded corner — private and useful — contains no protocol.
-> Hybrid sits at the utility of real data and the linkage of real data; Full
-> Synthetic loses most of the gaze signal and none of the linkage. The single
+> Hybrid sits at the utility of real data and the linkage of real data;
+> SimSwap and DeepPrivacy2 Full Synthetic lose most of the gaze signal and none
+> of the linkage. The single
 > point that leaves the top row (DeepPrivacy2 full body with a fresh identity per
 > frame, ARI 0.297) is one on which a retrained gaze model learns nothing
 > (+4.34 cm, at the no-information reference). Restoring the original eyes to it
@@ -1242,8 +1243,12 @@ floor (1.57%), not "borrowed from panel a".
 > interval). Only the cell that meets both halves of the condition falls (ARI
 > 0.297), and verification there is still 36%. Unprocessed and SimSwap face crops
 > are at 1.000; FAMS at 0.939 / 0.853. **(b)** Eye-ROI linkage for every arm, with
-> 95% subject-level bootstrap intervals; dashed: the eye-native floor (0.074). Every arm with a fixed identity per participant
-> overlaps unprocessed eyes; only per-frame identity approaches the floor.
+> 95% subject-level bootstrap intervals; dashed: the eye-native floor (0.074).
+> SimSwap and DeepPrivacy2 with a fixed identity per participant overlap
+> unprocessed eyes. A fresh DeepPrivacy2 identity per frame brings the eye ROI
+> close to the floor (0.12–0.17), and FAMS sits between (0.29–0.33) under either
+> seed regime, because a fixed seed does not fix its output identity. Eye-ROI
+> linkage assumes the attacker knows the cohort size (k = 18).
 
 **Caption, utility under three conditions.**
 
@@ -1254,7 +1259,22 @@ floor (1.57%), not "borrowed from panel a".
 > architectures; dots: each architecture. Red band: no-information reference;
 > grey band: initialisation noise floor. Retraining removes most of the
 > DeepPrivacy2 penalty but stops at the no-information level; it does not remove
-> SimSwap's; Hybrid is at baseline in every condition.
+> SimSwap's; for FAMS it removes most of it on real faces (+0.94 cm) and less on
+> the release (+2.15 cm). Hybrid recovers most of the penalty in every condition
+> and, once retrained, lies within the noise floor.
+
+**Caption, two attackers (supplement).**
+
+> **The same de-identified eye crops under two attackers.** True-accept rate at
+> a false-accept rate of 1e-3 for the left and right eye ROI, unprocessed and
+> SimSwap with two target identities (t1 = identity A, t2 = identity B). Blue: an
+> attacker who holds enrolment photographs of the participants (A1) and matches
+> them against the release. Orange: an attacker who holds only the release (A2),
+> matching first-half templates against second-half probes. Vertical line: the
+> eye-native floor (1.57%), measured on a face-free patch of the same frames.
+> Unprocessed eyes verify at 62–67% under both attackers. SimSwap drives A1 to
+> the floor (0.2–1.8%) while A2 still verifies 43–62%: a privacy figure reported
+> without its attacker can differ by 60 points on identical data.
 
 ---
 
