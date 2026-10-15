@@ -32,7 +32,7 @@ modalities; the evidence does not reach them.
 > untouched. We observed each half separately. The diffusion anonymiser breaks
 > per-participant consistency by construction and keeps most of the gaze signal —
 > models retrained on it lose 0.4–1.3 cm on real faces where SimSwap loses
-> 2.5–4.6 — but leaves the face crop linkable (ARI 0.85–0.94). Full-body
+> 2.5–6.2 — but leaves the face crop linkable (ARI 0.85–0.94). Full-body
 > inpainting with a fresh identity per frame meets both halves and breaks
 > discovery of the cohort (face-crop ARI 0.297), but it repaints the eyes, and a
 > gaze model trained on it learns nothing. Even there, an attacker with a few
