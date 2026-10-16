@@ -1,0 +1,19 @@
+{
+  "tag": "t1_d1.5",
+  "folder": "appleFace",
+  "n_subjects": 18,
+  "n_frames": 1010,
+  "self_align": true,
+  "det_fail": 70,
+  "n_alignment_imputed": 0,
+  "adapted_align": false,
+  "n_subjects_recovered": 17,
+  "ari_k18": 0.898737207371452,
+  "purity_k18": 0.9594059405940594,
+  "k_selected": 28,
+  "silhouette": 0.11312370747327805,
+  "ari_kauto": 0.7544462499143092,
+  "purity_kauto": 0.8594059405940594,
+  "dprime_same_diff": 2.0524568535607015,
+  "pair_auc": 0.9265528357332
+}

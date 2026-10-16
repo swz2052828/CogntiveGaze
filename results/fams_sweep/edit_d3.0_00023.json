@@ -1,0 +1,12 @@
+{
+  "00023": {
+    "n": 260,
+    "mean_abs_diff": 32.94076664767332,
+    "n_undetected": 0,
+    "undetected": [],
+    "multi_face_frames": 1,
+    "identity": "per_frame",
+    "degree": 3.0,
+    "steps": 25
+  }
+}

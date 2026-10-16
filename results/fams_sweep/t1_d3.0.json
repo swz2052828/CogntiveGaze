@@ -1,0 +1,15 @@
+{
+  "tag": "t1_d3.0",
+  "folder": "appleFace",
+  "n_subjects": 18,
+  "n_frames": 0,
+  "self_align": true,
+  "adapted_align": false,
+  "det_fail": 1080,
+  "n_alignment_imputed": 0,
+  "n_subjects_recovered": 0,
+  "ari_k18": null,
+  "purity_k18": null,
+  "k_selected": null,
+  "k18_undefined_reason": "only 0 embeddings from 18 subjects survived detection (1080 failures); fewer than 2 subjects recoverable, so no partition exists to score"
+}

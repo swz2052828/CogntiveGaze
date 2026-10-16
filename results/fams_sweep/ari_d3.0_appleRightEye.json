@@ -1,0 +1,19 @@
+{
+  "tag": "d3.0_appleRightEye",
+  "source": "emb_d3.0_appleRightEye.npz",
+  "n_frames": 2160,
+  "n_participants": 18,
+  "ari_point": 0.2530481803676909,
+  "ari_seed_mean": 0.24733622633322025,
+  "ari_seed_sd": 0.00781414586600154,
+  "ari_seed_min": 0.22713353763828895,
+  "ari_seed_max": 0.2598616467382194,
+  "n_seeds": 20,
+  "ari_boot_mean": 0.33081784228198785,
+  "ari_boot_ci95": [
+    0.20774428816485666,
+    0.4863574609630649
+  ],
+  "frac_boot_above_point": 0.864,
+  "n_boot": 1000
+}

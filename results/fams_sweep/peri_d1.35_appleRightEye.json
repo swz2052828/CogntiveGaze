@@ -1,0 +1,17 @@
+{
+  "tag": "peri_d1.35_appleRightEye",
+  "folder": "appleRightEye",
+  "n_subjects": 18,
+  "direct_dprime": 1.1537956596372467,
+  "chance_rank1": 0.05555555555555555,
+  "arcface_direct_rank1": 0.6722222222222223,
+  "arcface_direct_auc": 0.8115212973049302,
+  "informed_probe_rank1": 0.8361111111111111,
+  "informed_probe_auc": 0.9905383079157588,
+  "direct_TAR@FAR=0.1": 0.5537037037037037,
+  "direct_TAR@FAR=0.01": 0.21574074074074073,
+  "direct_TAR@FAR=0.001": 0.062037037037037036,
+  "probe_TAR@FAR=0.1": 0.9740740740740741,
+  "probe_TAR@FAR=0.01": 0.8444444444444444,
+  "probe_TAR@FAR=0.001": 0.6185185185185185
+}

@@ -494,7 +494,19 @@
     },
     {
       "degree": "1.35",
-      "complete": false
+      "complete": true,
+      "collapsed": 0.000925925925925926,
+      "face_arc_rank1": 0.4553072625698324,
+      "face_arc_tar3": 0.14059590316573556,
+      "face_fn_rank1": 0.3138888888888889,
+      "face_fn_tar3": 0.025925925925925925,
+      "face_ari": 0.8099417440330893,
+      "eyeL_a1_tar3": 0.008333333333333333,
+      "eyeL_a2_tar3": 0.04722222222222222,
+      "eyeL_ari": 0.30513456074724665,
+      "iris_r_u": 0.5456031628514263,
+      "iris_gt_r_x": 0.6205358823903542,
+      "iris_gt_r_y": 0.1958729923914655
     },
     {
       "degree": "1.5",
@@ -514,11 +526,35 @@
     },
     {
       "degree": "1.6",
-      "complete": false
+      "complete": true,
+      "collapsed": 0.18703703703703703,
+      "face_arc_rank1": 0.2905027932960894,
+      "face_arc_tar3": 0.05865921787709497,
+      "face_fn_rank1": 0.1527777777777778,
+      "face_fn_tar3": 0.016666666666666666,
+      "face_ari": 0.7922778696640745,
+      "eyeL_a1_tar3": 0.006481481481481481,
+      "eyeL_a2_tar3": 0.058333333333333334,
+      "eyeL_ari": 0.3024387198963807,
+      "iris_r_u": 0.3495174141969088,
+      "iris_gt_r_x": 0.4130264843888864,
+      "iris_gt_r_y": 0.11595915631808153
     },
     {
       "degree": "1.75",
-      "complete": false
+      "complete": true,
+      "collapsed": 0.36018518518518516,
+      "face_arc_rank1": 0.21973929236499068,
+      "face_arc_tar3": 0.037243947858473,
+      "face_fn_rank1": 0.20462962962962963,
+      "face_fn_tar3": 0.019444444444444445,
+      "face_ari": 0.7843652866014239,
+      "eyeL_a1_tar3": 0.004629629629629629,
+      "eyeL_a2_tar3": 0.049074074074074076,
+      "eyeL_ari": 0.2585232253764765,
+      "iris_r_u": 0.18644443140152778,
+      "iris_gt_r_x": 0.23402217969632613,
+      "iris_gt_r_y": 0.07970298701075053
     },
     {
       "degree": "2.0",
@@ -538,7 +574,7 @@
     },
     {
       "degree": "3.0",
-      "complete": true,
+      "complete": false,
       "collapsed": 1.0,
       "face_arc_rank1": 0.06890130353817504,
       "face_arc_tar3": 0.00186219739292365,
@@ -547,10 +583,7 @@
       "face_ari": null,
       "eyeL_a1_tar3": 0.0,
       "eyeL_a2_tar3": 0.0,
-      "eyeL_ari": 0.250897520256922,
-      "iris_r_u": NaN,
-      "iris_gt_r_x": null,
-      "iris_gt_r_y": null
+      "eyeL_ari": 0.250897520256922
     },
     {
       "degree": "SimSwap A (reference)",
@@ -562,31 +595,39 @@
   ],
   "D_streams": {
     "eyes_only_mobilenet_v3": {
-      "baseline": null,
-      "n_base": 0,
+      "baseline": 4.968393417199453,
+      "n_base": 1,
       "swap1_real": {
-        "mean": null,
+        "mean": 2.5515802582105005,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          2.5515802582105005
+        ]
       },
       "swap1_anon": {
-        "mean": null,
+        "mean": 2.277185968557994,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          2.277185968557994
+        ]
       },
       "swap2_real": {
-        "mean": null,
+        "mean": 3.550976447264354,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          3.550976447264354
+        ]
       },
       "swap2_anon": {
-        "mean": null,
+        "mean": 2.0259733478228252,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          2.0259733478228252
+        ]
       },
       "famsF_real": {
         "mean": null,
@@ -602,25 +643,31 @@
       }
     },
     "eyes_only_mgazenet": {
-      "baseline": null,
-      "n_base": 0,
+      "baseline": 5.055812903245291,
+      "n_base": 1,
       "swap1_real": {
-        "mean": null,
+        "mean": 6.348700503508249,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          6.348700503508249
+        ]
       },
       "swap1_anon": {
-        "mean": null,
+        "mean": 3.2726128458976724,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          3.2726128458976724
+        ]
       },
       "swap2_real": {
-        "mean": null,
+        "mean": 7.630199897289275,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          7.630199897289275
+        ]
       },
       "swap2_anon": {
         "mean": null,
@@ -642,19 +689,23 @@
       }
     },
     "face_only_mobile_vit": {
-      "baseline": null,
-      "n_base": 0,
+      "baseline": 5.194034020105997,
+      "n_base": 1,
       "swap1_real": {
-        "mean": null,
+        "mean": 4.844136174519855,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          4.844136174519855
+        ]
       },
       "swap1_anon": {
-        "mean": null,
+        "mean": 3.70844078063965,
         "sd": null,
-        "n": 0,
-        "draws": []
+        "n": 1,
+        "draws": [
+          3.70844078063965
+        ]
       },
       "swap2_real": {
         "mean": null,

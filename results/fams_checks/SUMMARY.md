@@ -31,18 +31,18 @@
 | degree | collapsed | face R1 Arc | face TAR Arc | face R1 FaceNet | face ARI | eyeL A1 TAR | eyeL A2 TAR | eyeL ARI | pupil r_u | pupil gt r x | complete |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1.25 | 0.0% | 60.8% | 24.1% | 42.8% | 0.853 | 0.6% | 5.1% | 0.292 | 0.610 | 0.675 | True |
-| 1.35 | — | — | — | — | — | — | — | — | — | — | False |
+| 1.35 | 0.1% | 45.5% | 14.1% | 31.4% | 0.810 | 0.8% | 4.7% | 0.305 | 0.546 | 0.621 | True |
 | 1.5 | 6.5% | 35.9% | 10.1% | 22.6% | 0.899 | 0.2% | 10.5% | 0.283 | 0.463 | 0.533 | True |
-| 1.6 | — | — | — | — | — | — | — | — | — | — | False |
-| 1.75 | — | — | — | — | — | — | — | — | — | — | False |
+| 1.6 | 18.7% | 29.1% | 5.9% | 15.3% | 0.792 | 0.6% | 5.8% | 0.302 | 0.350 | 0.413 | True |
+| 1.75 | 36.0% | 22.0% | 3.7% | 20.5% | 0.784 | 0.5% | 4.9% | 0.259 | 0.186 | 0.234 | True |
 | 2.0 | 93.9% | 11.2% | 0.9% | 9.5% | 0.507 | 0.2% | 13.5% | 0.353 | 0.012 | 0.143 | True |
-| 3.0 | 100.0% | 6.9% | 0.2% | 3.8% | — | 0.0% | 0.0% | 0.251 | nan | — | True |
+| 3.0 | 100.0% | 6.9% | 0.2% | 3.8% | — | 0.0% | 0.0% | 0.251 | — | — | False |
 | SimSwap A (reference) | — | — | — | — | — | — | — | — | 0.700 | 0.795 | True |
 
 ## D. Stream isolation (retrained; penalty vs same-backbone real-data model, paired within draw)
 
 | backbone | real-data error | SimSwap A test real | SimSwap B test real | FAMS test real | SimSwap A test anon | SimSwap B test anon | FAMS test anon | draws |
 |---|---|---|---|---|---|---|---|---|
-| eyes_only_mobilenet_v3 | None | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | 0–0 |
-| eyes_only_mgazenet | None | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | 0–0 |
-| face_only_mobile_vit | None | PENDING | PENDING | PENDING | PENDING | PENDING | PENDING | 0–0 |
+| eyes_only_mobilenet_v3 | 4.97 | +2.55 | +3.55 | PENDING | +2.28 | +2.03 | PENDING | 0–1 |
+| eyes_only_mgazenet | 5.06 | +6.35 | +7.63 | PENDING | +3.27 | PENDING | PENDING | 0–1 |
+| face_only_mobile_vit | 5.19 | +4.84 | PENDING | PENDING | +3.71 | PENDING | PENDING | 0–1 |
