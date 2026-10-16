@@ -46,7 +46,11 @@ case "${1:?swap|dp2}" in
   # Control for the FAMS 10%-subset result: the same subset, other methods.
   sub10ctl) ARMS="swap1_sub10:ProcessedSwap dp2s_sub10:ProcessedDP2full_per_subject" ;;
   fams) ARMS="famsf:ProcessedFAMSsub10_per_frame famsf_oldeye:ProcessedFAMSsub10_per_frame_oldeye none_sub10:ProcessedData" ;;
-  *) echo "usage: $0 swap|dp2|dp2fb|fams|famsfull|sub10ctl"; exit 1 ;;
+  # Stream isolation (2026-10-16): with eyes-only / face-only BACKBONES, which stream
+  # carries the gaze that survives each family? Real data trained here too, because
+  # these backbones have no five-draw real-data baseline under this harness.
+  streams) ARMS="none:ProcessedData swap1:ProcessedSwap swap2:ProcessedSwap2 famsF:ProcessedFAMSfull_per_frame" ;;
+  *) echo "usage: $0 swap|dp2|dp2fb|fams|famsfull|sub10ctl|streams"; exit 1 ;;
 esac
 BACKBONES="${BACKBONES:-affnet mgazenet mobilenet_v3}"
 REP="${REP:-1}"
