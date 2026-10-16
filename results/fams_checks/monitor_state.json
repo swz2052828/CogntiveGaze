@@ -1,0 +1,8 @@
+{
+  "reported": {"A_face_a1": true, "B_iris_methods": true, "C_sweep_1.25_1.5_2.0_3.0": true,
+               "C_sweep_1.35_1.6_1.75": false, "D_streams": false},
+  "jobs": {"streams_train": "1326806-1326869", "streams_eval": [1326818, 1326831, 1326844, 1326857, 1326870],
+           "sweep2_gen": 1327382, "sweep2_attack": 1327383, "sweep2_iris": 1327384},
+  "manuscript_updated": false,
+  "notes": "Degrees >=2.0 collapse (94-100% frames not faces): exclude from privacy claims. Usable range 1.25-1.5."
+}
