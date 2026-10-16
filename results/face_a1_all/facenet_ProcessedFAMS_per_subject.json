@@ -1,0 +1,14 @@
+{
+  "tag": "face_a1_facenet_ProcessedFAMS_per_subject",
+  "folder": "appleFace",
+  "n_subjects": 18,
+  "n_probe": 1080,
+  "rank1": 0.4101851851851852,
+  "chance_rank1": 0.05555555555555555,
+  "dprime": 1.4309191703796387,
+  "roc_auc": 0.8408660130718955,
+  "kps_fail": 0,
+  "TAR@FAR=0.1": 0.5712962962962963,
+  "TAR@FAR=0.01": 0.19074074074074074,
+  "TAR@FAR=0.001": 0.032407407407407406
+}

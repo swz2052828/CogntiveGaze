@@ -18,7 +18,7 @@ cd /springbrook/share/eng/esrpxk/CogntiveGaze
 D=/springbrook/share/eng/esrpxk/datasets
 R=/springbrook/share/eng/esrpxk/results/face_a1_all
 mkdir -p "$R"
-ARMS="ProcessedSwap ProcessedSwap2 ProcessedDP2_per_subject ProcessedDP2_per_frame ProcessedDP2fb_per_subject ProcessedDP2fb_per_frame ProcessedFAMS_per_subject ProcessedFAMS_per_frame"
+ARMS="${ARMS_OVERRIDE:-ProcessedSwap ProcessedSwap2 ProcessedDP2t1_per_subject ProcessedDP2t1_per_frame ProcessedDP2fb_per_subject ProcessedDP2fb_per_frame ProcessedFAMS_per_subject ProcessedFAMS_per_frame}"
 for A in $ARMS; do
   echo "########## arcface $A"
   /springbrook/share/eng/esrpxk/envs/idattack/bin/python scripts/anon/id_attack.py --ctx 0 \
