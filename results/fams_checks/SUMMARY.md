@@ -43,6 +43,6 @@
 
 | backbone | real-data error | SimSwap A test real | SimSwap B test real | FAMS test real | SimSwap A test anon | SimSwap B test anon | FAMS test anon | draws |
 |---|---|---|---|---|---|---|---|---|
-| eyes_only_mobilenet_v3 | 4.97 | +2.55 | +3.55 | PENDING | +2.28 | +2.03 | PENDING | 0–1 |
-| eyes_only_mgazenet | 5.06 | +6.35 | +7.63 | PENDING | +3.27 | PENDING | PENDING | 0–1 |
-| face_only_mobile_vit | 5.19 | +4.84 | PENDING | PENDING | +3.71 | PENDING | PENDING | 0–1 |
+| eyes_only_mobilenet_v3 | 4.95 | +2.71 ± 0.93 | +3.56 ± 0.39 | +1.16 ± 0.10 | +2.44 ± 0.36 | +1.98 ± 0.22 | +2.72 ± 0.21 | 5–5 |
+| eyes_only_mgazenet | 5.14 | +4.79 ± 0.94 | +6.77 ± 0.56 | +0.96 ± 0.27 | +2.83 ± 0.38 | +2.95 ± 0.12 | +2.04 ± 0.17 | 5–5 |
+| face_only_mobile_vit | 5.29 | +4.51 ± 0.40 | +3.87 ± 0.59 | +1.44 ± 0.26 | +3.67 ± 0.16 | +2.98 ± 0.33 | +2.24 ± 0.29 | 5–5 |

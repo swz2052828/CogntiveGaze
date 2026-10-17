@@ -4,7 +4,7 @@
     "B_iris_methods": true,
     "C_sweep_1.25_1.5_2.0_3.0": true,
     "C_sweep_1.35_1.6_1.75": true,
-    "D_streams": false
+    "D_streams": true
   },
   "jobs": {
     "streams_train": "1326806-1326869",

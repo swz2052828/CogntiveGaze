@@ -37,3 +37,41 @@ Chance Rank-1 5.6%; TAR floor 1.57%; ARI floor 0.089 (face) / 0.074 (eye).
 **For the paper.** FAMS has no setting that is private on the face crop and keeps the
 pupil signal: each step that lowers face A1 removes gaze information, and none removes
 linkability. Report as a sweep figure/table in §7–8; collapse rate stated explicitly.
+
+## D. Stream isolation (complete 2026-10-17)
+
+Eyes-only (MobileNet-V3, MGazeNet) and face-only (MobileViT) models retrained on real
+data, SimSwap A, SimSwap B and FAMS (all frames), same recipe and partition, five
+initialisations each; penalty against the same backbone's real-data model, paired
+within draw.
+
+| model | real-data error | trained on, tested on REAL faces: SimSwap A / B / FAMS | trained and tested on the RELEASE: SimSwap A / B / FAMS |
+|---|---|---|---|
+| eyes-only MobileNet-V3 | 4.95 | +2.71 / +3.56 / **+1.16** | **+2.44 / +1.98** / +2.72 |
+| eyes-only MGazeNet | 5.14 | +4.79 / +6.77 / **+0.96** | +2.83 / +2.95 / **+2.04** |
+| face-only MobileViT | 5.29 | +4.51 / +3.87 / **+1.44** | +3.67 / +2.98 / **+2.24** |
+
+Paired draws, FAMS better than SimSwap A / B: tested on real faces, eyes-only 9/10 and
+10/10, face-only 5/5 and 5/5; tested on the release, eyes-only MobileNet-V3 0/5 and 0/5
+(SimSwap better), eyes-only MGazeNet 5/5 and 5/5.
+
+**Findings.**
+1. The FAMS advantage survives in an eyes-only model, so it is not carried by the face
+   crop or head pose: a model that sees only FAMS eye crops and is deployed on real
+   eyes loses ~1 cm, against 2.7–6.8 cm for SimSwap.
+2. But it is not an information advantage. Measured inside the release, eye crops
+   carry comparable gaze information under both methods — SimSwap better for one
+   eyes-only architecture in every draw, FAMS for the other — and the model-free pupil
+   test shows SimSwap pupils tracking true gaze better (17/17 participants).
+3. The difference is transfer. Models trained on SimSwap eyes fail on real eyes;
+   models trained on FAMS eyes do not. A plausible mechanism (interpretation, not
+   tested): SimSwap maps every participant onto ONE template's eye appearance, so a
+   model learns gaze on a single synthetic eye; FAMS draws a different identity every
+   frame, so the training eyes stay as varied as real ones.
+
+**For the paper.** Keep the measured FAMS condition-(i) numbers (+0.4 to +1.3 cm on
+real faces) but replace the explanation: FAMS is the more useful release for training
+models deployed on real users because its synthetic eyes are diverse and realistic,
+not because it keeps more pupil information — it keeps less. Combined with C and the
+face-crop A1 (Rank-1 61%), no FAMS setting is private on the face crop, and stronger
+settings remove gaze information without removing linkability.
