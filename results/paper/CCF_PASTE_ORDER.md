@@ -63,20 +63,24 @@ Title case: "On It" both capitalised; "in" lower case.
 > models are retrained on the release — yet those same crops verify identity at
 > 62–80% TAR at FAR 1e-3 against a measured 1.6% floor, under two unrelated
 > recognisers. The eye pixels that make gaze estimation work are the pixels that
-> identify. Full synthesis does break the link to the real face, but costs
-> 2.2–6.2 cm even after retraining, and an attacker holding only the release
-> still recovers exactly the right 18 people — from a 120 px ocular crop
-> containing no hair, ears, clothing or face outline. Removal by inpainting fares
-> worse: a model retrained on it is no better than predicting the screen centre.
-> A diffusion anonymiser does better on both axes — models retrained on it lose
-> 0.4–1.3 cm on real faces where SimSwap loses 2.5–6.2, and it breaks
-> per-participant consistency by itself — yet its face crops still link at ARI
-> 0.85; releasing eye landmarks instead of pixels
-> links too and carries almost no gaze signal. Across replacement, removal and diffusion,
-> the one configuration that breaks linkage — repainting the whole person with a
-> fresh identity every frame — is one on which a retrained gaze model learns
-> nothing. We state what a releasable gaze corpus would require, and report what our own tiered release leaks when
-> measured rather than assumed.
+> identify. Full synthesis breaks the link between the released eye crops and the
+> real face, but the synthetic face crop still verifies against the participant's
+> own photographs (18–24% TAR under ArcFace), retraining leaves a 2.2–6.2 cm cost,
+> and the release still singles out every participant: an unsupervised partition
+> recovers exactly the 18 individuals, even from a 120 px ocular crop containing
+> no hair, ears, clothing or face outline. Removal by inpainting fares worse: a
+> model retrained on it is no better than predicting the screen centre. A
+> diffusion anonymiser yields models that transfer to real faces far better
+> (0.4–1.3 cm against 2.5–6.2 cm), but not because it keeps more gaze: its pupils
+> follow true gaze less closely than SimSwap's, and stronger settings trade pupil
+> signal for identity protection without reducing linkability. Releasing eye
+> landmarks instead of pixels links too and carries almost no gaze signal. A
+> usable gaze corpus must keep each participant's frames together, so it is
+> linkable by construction; within the content, the one configuration that breaks
+> linkage — repainting the whole person with a fresh identity every frame — is one
+> on which a retrained gaze model learns nothing. We state what a releasable gaze
+> corpus would require, and report what our own tiered release leaks when measured
+> rather than assumed.
 
 If the venue caps at 250: drop "seven oculomotor tasks", the sentence on removal
 by inpainting, and the final clause about the tiered release.
@@ -148,8 +152,11 @@ by inpainting, and the final clause about the tiered release.
 > that carry the gaze signal are the pixels that carry the identity, so a
 > protocol that recovers accuracy by retaining genuine ocular imagery retains
 > the biometric with it. Second, replacing the whole face — ocular region
-> included — does remove the correspondence to the participant's real face, but
-> leaves the released corpus exactly partitionable by individual. Identity
+> included — removes the correspondence between the released eye crops and the
+> participant's real face, but not between the synthetic face crop and the real
+> face, and it leaves the released corpus exactly partitionable by individual —
+> which, under the European test for anonymisation, is enough for the data to
+> remain personal data [CITE: wp29anon]. Identity
 > replacement is per-participant consistent, and the channels that remain are
 > illumination, skin tone, periocular geometry and crop scale: attributes of the
 > person that lie outside the inner-face region any swapping method edits.
@@ -179,9 +186,12 @@ dataset paper with de-identification attached.
 > de-identification the way the security literature evaluates it — with a stated
 > attacker, a pretrained recogniser that never sees our data, and a
 > session-nuisance control — rather than asserting it from the generator's
-> objective. We distinguish an attacker holding enrolment photographs from one
-> holding only the released corpus, and show the two differ by up to 60 points on
-> identical pixels, which makes an unqualified privacy number uninterpretable.
+> objective. We distinguish re-identification by an attacker holding the
+> participants' photographs (A1) from a test of whether the released content
+> singles out individuals with no external reference (A2, the linkability
+> criterion of the European anonymisation standard), and show the two differ by up
+> to 60 points on identical pixels, which makes an unqualified privacy number
+> uninterpretable.
 > We release the protocol as an audit tool and a fifteen-item release checklist
 > for gaze corpora, distilled into seven design guidelines (§9.6)
 > [CITE: privaudit-repo]; run on this study's saved embeddings it
@@ -208,9 +218,11 @@ dataset paper with de-identification attached.
 > partitionable (ARI 1.000); so is it, near enough (0.982), when DeepPrivacy2
 > repaints the whole person but keeps each participant's synthetic identity fixed.
 >
-> **A tested, two-part condition for breaking release-only linkage.** Rather than
-> stopping at a negative result, we state the requirement as a falsifiable claim
-> and test it by construction. Release-only linkage falls only when **both** the
+> **A tested, two-part condition for breaking content-based linkage.** Rather
+> than stopping at a negative result, we state the requirement as a falsifiable
+> claim and test it by construction. It concerns releases that strip participant
+> identifiers; one that keeps them, as a usable gaze corpus must, is linkable by
+> construction. Linkage from the released content falls only when **both** the
 > transformation breaks per-participant consistency **and** the released crop
 > contains nothing outside the transformation's edit domain. We test it as a 2×2
 > — face-only vs full-body DeepPrivacy2, fixed vs per-frame identity — and only
@@ -225,8 +237,8 @@ dataset paper with de-identification attached.
 > floors of 1.57% and 0.074. The one configuration that breaks linkage repaints
 > the eyes, and a gaze model retrained on repainted eyes
 > does no better than predicting the screen centre. Each half of the condition is
-> attainable on its own — a diffusion anonymiser meets the first while keeping
-> most of the gaze signal, full-body inpainting meets both while destroying it —
+> attainable on its own — a diffusion anonymiser meets the first, full-body
+> inpainting meets both while destroying the gaze signal —
 > which locates what is missing precisely: a gaze-preserving generator whose edit
 > domain covers the whole released crop. This tells a dataset author what to do,
 > and what it costs, not merely what fails.
@@ -297,12 +309,14 @@ dataset paper with de-identification attached.
 > Muştu and Ekenel evaluate face swapping as a video anonymiser on temporal
 > consistency, anonymity strength and visual fidelity, and conclude that it
 > hides identity effectively [CITE: mustu25]. **We reach the opposite conclusion,
-> and the difference is the attacker.** Anonymity strength as measured there asks
-> whether a swapped face can be matched to the person's real face; on that
-> question our results agree with theirs. It does not ask whether the released
-> corpus can be partitioned by individual with no external reference, which is
-> the question a public release actually poses, and which we show survives the
-> swap almost intact.
+> and the difference is the test.** Anonymity strength as measured there asks
+> whether a swapped face can be matched to the person's real face. On that
+> question our results agree for the synthesised eye crops, which fall to the
+> floor, but not for the synthetic face crop, which still verifies against the
+> participant's photographs at a strict operating point. Nor does it ask whether
+> the released corpus singles out individuals with no external reference — the
+> linkability criterion under which European regulators judge whether data are
+> anonymous [CITE: wp29anon] — and that property survives the swap almost intact.
 >
 > **Eye movement as a biometric.** Identity is recoverable from eye movement
 > itself, through oculomotor-plant characteristics and scanpath statistics
@@ -411,15 +425,20 @@ Place immediately after *GAN-based Privacy De-identification*.
 > models consume — the face ROI, the left and right eye ROIs, and the face grid —
 > not the source video. All attacks operate on exactly those crops.
 >
-> **Attackers.** Two, because they give different answers on identical data.
-> *A1, enrolment photographs:* the attacker holds ordinary photographs of the
-> candidate individuals and asks which enrolled person a released crop is — the
-> classical re-identification threat. *A2, release only:* the attacker holds
-> nothing but the shared dataset; they cannot name anyone unaided, but they can
-> ask whether the release partitions into individuals, and a single labelled
-> example then names an entire cluster. For a corpus intended for public release
-> A2 is the operative attacker, because the recipient of a public dataset is by
-> definition A2.
+> **Attackers and tests.** *A1, re-identification from photographs,* is the
+> primary threat: the attacker holds ordinary photographs of candidate
+> individuals — for example, people known to belong to the recruitment pool — and
+> asks which of them a released crop shows. *A2, linkability,* is a property test
+> rather than a separate adversary: whether the released content alone lets
+> frames be grouped by individual, with no external reference. It operationalises
+> two of the three criteria by which the Article 29 Working Party judges
+> anonymisation, singling out and linkability [CITE: wp29anon]; data whose
+> records can be isolated per person remain personal data even when no name is
+> attached [CITE: gdpr]. A usable gaze corpus keeps each participant's frames
+> together, because participant-wise splits and per-user calibration require it,
+> so a released corpus is linkable by construction; A2 asks whether the content
+> would restore that grouping if the identifiers were stripped. The two tests can
+> disagree by up to 60 points on identical crops (Figure S2).
 >
 > **Recognisers.** InsightFace `buffalo_l` (ArcFace, w600k_r50) throughout, used
 > without any adaptation to this dataset; cosine similarity against
@@ -501,21 +520,23 @@ axis before the utility table that it reframes.
 > face is considered at all. The mechanism that recovers the utility is the
 > mechanism that leaks the identity.
 >
-> **Full synthesis does remove the correspondence to the real face.** With the
-> ocular region synthesised as well, the same attack falls to **0.2% / 1.8%**
-> TAR@FAR=1e-3, at or below the floor (FaceNet: 0.00% / 1.48%); the face ROI
-> falls from 100% to **22.0%** [6.1, 41.3] for Identity A and **23.3%**
-> [7.2, 43.2] for Identity B. The two templates agree, and so do the two
-> recognisers, so this is a property of the method rather than of a particular
-> source face or a particular recogniser.
+> **Full synthesis removes the correspondence for the eye crops, not for the face
+> crop.** With the ocular region synthesised as well, the same attack on the eye
+> ROIs falls to **0.2% / 1.8%** TAR@FAR=1e-3, at or below the floor (FaceNet:
+> 0.00% / 1.48%); the two templates agree, and so do the two recognisers. The
+> synthetic face crop does not fall that far. Matched against the participant's
+> own photographs it still verifies at **18.4%** [5.1, 35.4] for Identity A and
+> **22.0%** [6.8, 40.7] for Identity B under ArcFace (Table 2a), against 100% for
+> unprocessed faces and a 1.6% floor.
 >
-> The face-ROI intervals are wide — [6.1, 41.3] for Identity A — because the
-> sampling unit is 18 participants. The direction is secure: the lower bound is
-> more than three times the 1.6% floor, and both templates and both recognisers
-> agree. The magnitude is not: these data support "well above floor, an order of
-> magnitude below unprotected imagery", and not a finer grading than that. The
-> release decisions in §Data Availability rest on the direction, not on the point
-> estimate.
+> The face-ROI intervals are wide because the sampling unit is 18 participants.
+> For Identity A the direction is secure: the lower bound is three times the
+> floor, and FaceNet agrees (14.4% against its own 3.52% floor). For Identity B
+> FaceNet does not confirm it (0.2%), so the residual depends on the template and
+> the recogniser. These data support "above floor, an order of magnitude below
+> unprotected imagery" for the face crop, and not a finer grading than that. The
+> release decisions in the Data Availability statement rest on the direction, not
+> on the point estimate.
 >
 > **But the release stays linkable.** Under A2, an unsupervised partition of the
 > released corpus recovers the participants exactly: **ARI 1.000 at the correct
@@ -588,7 +609,8 @@ axis before the utility table that it reframes.
 > identity for an attacker with templates to verify a third of the frames. The
 > condition blocks *discovery* of who is who; it does not stop *verification* by
 > someone who already holds a few labelled frames. Against A1 every
-> DeepPrivacy2 arm is at or below floor (≤ 1.2%), consistent with DeepPrivacy2's
+> DeepPrivacy2 arm is at or below floor, on the eye crops (≤ 1.2%) and on the face
+> crop (≤ 1.6%; Table 2a), consistent with DeepPrivacy2's
 > own re-identification evaluation, which, like A1, matches enrolment images to
 > the release and does not test release-only linkage.
 >
@@ -605,6 +627,56 @@ axis before the utility table that it reframes.
 > and geometry the aligned square leaves alone, stays linkable at ARI 0.85–0.94.
 > The two-part condition was derived from SimSwap and DeepPrivacy2; this is its
 > prediction holding on a family it was not derived from.
+>
+> **The diffusion face still resembles the participant.** Matched against the
+> participant's own photographs, the FAMS face crop verifies at **24.1%**
+> [15.3, 33.6] under ArcFace — no lower than SimSwap — although FaceNet places it
+> near its own floor (5.9% [2.2, 10.5] against 3.52%; Table 2a). FAMS conditions
+> on the source face to keep pose and expression, and part of the identity comes
+> with them. Closed-set Rank-1 is high for both families (57–61%) but is not
+> evidence here: on single-session data its floor is 50.5%.
+>
+> **Table 2a.** Face-crop A1 for every family: released face crops (second half of
+> each recording) matched against the participant's original face crops (first
+> half). TAR at FAR = 1e-3 with 95% participant-level intervals, each recogniser
+> against its own floor (ArcFace 1.6%, FaceNet 3.52%).
+>
+> | Release | ArcFace TAR | FaceNet TAR |
+> |---|---|---|
+> | SimSwap, Identity A | 18.4% [5.1, 35.4] | 14.4% [0.7, 30.5] |
+> | SimSwap, Identity B | 22.0% [6.8, 40.7] | 0.2% [0.0, 0.6] |
+> | DeepPrivacy2 face, fixed | 1.6% [0.0, 4.6] | 0.7% [0.0, 1.6] |
+> | DeepPrivacy2 face, per frame | 1.4% [0.5, 2.5] | 2.8% [0.8, 5.5] |
+> | DeepPrivacy2 full body, fixed | 0.0% [0.0, 0.0] | 0.0% [0.0, 0.0] |
+> | DeepPrivacy2 full body, per frame | 0.3% [0.0, 0.7] | 0.6% [0.0, 1.4] |
+> | FAMS, fixed seed | 22.4% [14.3, 31.9] | 3.2% [1.6, 5.1] |
+> | FAMS, per frame | 24.1% [15.3, 33.6] | 5.9% [2.2, 10.5] |
+>
+> **Strength trades pupil signal for identity, not for linkability.** The FAMS
+> anonymisation degree extrapolates the generator away from the source identity.
+> Raising it from the authors' 1.25 to 1.5 — the strongest setting that still
+> yields a face in more than 90% of frames; beyond it the generator degrades
+> rather than anonymises, with 19–94% of crops containing no detectable face —
+> lowers ArcFace face verification from 24.1% to 10.1% [3.0, 19.3], still above
+> the floor (FaceNet reaches its floor from 1.35). It leaves face-crop linkage
+> where it was (ARI 0.81–0.90) and costs pupil signal: the within-participant
+> correlation between the synthetic pupil and true horizontal gaze falls from
+> 0.68 to 0.53 (Table 2b; SimSwap 0.79, unprocessed 0.87). Each step that lowers
+> re-identification removes gaze information; none removes linkability.
+>
+> **Table 2b.** FAMS anonymisation-strength sweep on the privacy sample (per-frame
+> noise). Settings producing more than 10% non-face outputs are shown but not used
+> for privacy conclusions. Pupil r: within-participant correlation of the synthetic
+> pupil's horizontal position with EyeLink gaze (§8.1).
+>
+> | Degree | Non-face outputs | Face TAR, ArcFace | Face TAR, FaceNet | Face linkage ARI | Eye linkage ARI | Pupil r |
+> |---|---|---|---|---|---|---|
+> | 1.25 (authors) | 0.0% | 24.1% [15.3, 33.6] | 5.9% | 0.853 | 0.292 | 0.68 |
+> | 1.35 | 0.1% | 14.1% [5.9, 23.5] | 2.6% | 0.810 | 0.305 | 0.62 |
+> | 1.5 | 6.5% | 10.1% [3.0, 19.3] | 2.2% | 0.899 | 0.283 | 0.53 |
+> | 1.6 | 18.7% | 5.9% [0.9, 12.0] | 1.7% | 0.792 | 0.302 | 0.41 |
+> | 1.75 | 36.0% | 3.7% [0.3, 9.4] | 1.9% | 0.784 | 0.259 | 0.23 |
+> | 2.0 | 93.9% | — | — | — | — | — |
 >
 > The residual channels the recogniser does exploit — skin tone, periocular
 > geometry, crop scale — are signals gaze estimation reads, which is why the axis
@@ -661,7 +733,7 @@ TAR at FAR = 1e-3, ArcFace, with 95% subject-level bootstrap CI.
 
 | Released stream | Real Data | Full Synthetic (A) | Full Synthetic (B) | Hybrid (Real Eyes) |
 |---|---|---|---|---|
-| Face ROI, TAR (A1) | 100% | 22.0% [6.1, 41.3] | 23.3% [7.2, 43.2] | 22.0% (face is synthetic) |
+| Face ROI, TAR (A1) | 100% | 18.4% [5.1, 35.4] | 22.0% [6.8, 40.7] | 18.4% (face is synthetic) |
 | Left eye ROI, TAR (A1) | 66.6% [53.1, 78.7] | 0.2% [0.0, 0.5] | 0.6% [0.0, 1.6] | **66.6%** (unaltered) |
 | Right eye ROI, TAR (A1) | 62.2% [49.7, 73.3] | 1.8% [0.1, 4.4] | 1.1% [0.0, 2.8] | **62.2%** (unaltered) |
 | *Session-nuisance floor* | *1.6%* | *1.6%* | *1.6%* | *1.6%* |
@@ -694,6 +766,15 @@ TAR at FAR = 1e-3, ArcFace, with 95% subject-level bootstrap CI.
 > training participants' mean gaze point for every frame: **9.37 cm**, a penalty
 > of +3.70 to +4.41 cm depending on the backbone's own baseline. A model at that
 > level has learned no gaze.
+>
+> **A model-free check on the pupil.** End-to-end error mixes the information a
+> release carries with how well a model trained on it transfers. We therefore
+> also measure the pupil directly. FaceMesh [CITE: facemesh] locates both iris
+> centres on the released face crop and on the original crop of the same frame,
+> each expressed in its eye's own corner-to-corner frame, which removes head pose
+> and crop placement. We report the within-participant correlation of the
+> released pupil position with the original one and with the EyeLink gaze
+> coordinate, on 4,680 frames identical across all releases.
 
 ### 9a. Table 3 — REPLACE entirely (condition (ii))
 
@@ -883,24 +964,52 @@ subset and again on all frames (by 2.89 and 3.57 cm on average).
 > penalty on real faces is small, +0.39 cm for AFFNet. The central utility finding
 > of Table 4 therefore does not depend on how the model was trained.
 >
-> **A diffusion anonymiser keeps most of the gaze signal.** FAMS looks, under
-> condition (ii), like the others: +4.1 to +5.1 cm, its absolute error close to
-> predicting the mean. Retraining shows that this is mostly domain shift. A model
-> trained on FAMS-anonymised frames and deployed on real faces is +0.94 cm from
-> one trained on real frames, averaged over architectures and five
-> initialisations — +1.15 ± 0.03 (MobileNet-V3), +0.39 ± 0.21 (AFFNet), +1.29 ±
-> 0.06 (MGazeNet) — with absolute errors of 6.0–6.3 cm against 9.4 for
-> predicting the mean. SimSwap A retrained the same way loses +3.83 cm and
-> DeepPrivacy2 +4.51; FAMS is better than both in every one of 15 paired draws.
-> Tested on the release instead of on real faces, the same models lose more
-> (+1.56 to +2.57 cm). The direction is the reverse of SimSwap's, whose retrained
-> models do worse on real faces than on the release, and DeepPrivacy2 is equal
-> across the two (within 0.4 cm). What a model learns from FAMS frames transfers to
-> real eyes better than it applies to FAMS frames themselves, consistent with the
-> diffusion step perturbing the eye region differently in every frame. FAMS is the only full-synthesis release we
-> tested that a third party could train a useful model on. On the privacy axis it
-> is also the only method that breaks per-participant consistency without being
-> asked to (§8); what keeps it linkable is the face crop it does not fully cover.
+> **A diffusion anonymiser transfers better; it does not keep more gaze.** FAMS
+> looks, under condition (ii), like the others: +4.1 to +5.1 cm. Retrained on its
+> release and deployed on real faces, models lose only +0.94 cm on average —
+> +1.15 ± 0.03 (MobileNet-V3), +0.39 ± 0.21 (AFFNet), +1.29 ± 0.06 (MGazeNet) —
+> against +3.83 for SimSwap A and +4.51 for DeepPrivacy2, and FAMS is better than
+> both in every one of 15 paired draws. Two measurements show that this is not
+> because its eyes carry more gaze. The model-free pupil test (Table 6a) finds
+> the opposite: SimSwap's synthetic pupils follow the participant's true
+> horizontal gaze more closely than FAMS's in all 17 participants with ground
+> truth (r = 0.79–0.83 against 0.68–0.69; unprocessed 0.87). And models that see
+> only the eye crops (Table 6b) reproduce the advantage on real faces — +0.96 to
+> +1.16 cm for FAMS against +2.71 to +6.77 for SimSwap — but not inside the
+> release, where the two are comparable (+2.04 to +2.72 against +1.98 to +2.95,
+> each method better for one eyes-only architecture in every draw). The difference
+> is transfer: models trained on SimSwap eyes fail on real eyes, models trained on
+> FAMS eyes do not. A plausible reading, which we did not test, is diversity:
+> SimSwap maps every participant onto one template's eyes, whereas FAMS draws a
+> new identity every frame. Tested on its own release, a FAMS-trained model is
+> less accurate than on real faces (+1.56 to +2.57 cm), the reverse of SimSwap.
+> FAMS is therefore the more useful release for training models deployed on real
+> users, for reasons that have nothing to do with keeping more of the pupil; on
+> the privacy axis it breaks per-participant consistency without being asked to,
+> yet its face crop still verifies against the participant's photographs and
+> stays linkable (§7).
+>
+> **Table 6a.** Pupil-position preservation, model-free (§8.1): within-participant
+> correlation of the released pupil position with the original one (horizontal,
+> vertical) and with EyeLink gaze, mean over participants; 4,680 identical frames.
+>
+> | Release | r with original, horizontal | r with original, vertical | r with gaze x | r with gaze y |
+> |---|---|---|---|---|
+> | Unprocessed | 1 | 1 | 0.87 | 0.56 |
+> | SimSwap, Identity A | 0.70 | 0.44 | 0.79 | 0.29 |
+> | SimSwap, Identity B | 0.70 | 0.44 | 0.83 | 0.28 |
+> | FAMS | 0.61 | 0.35 | 0.69 | 0.21 |
+> | DeepPrivacy2 (face and full body) | ≈ 0 | ≈ 0 | 0.06 | 0.05–0.07 |
+>
+> **Table 6b.** Stream isolation: eyes-only and face-only models retrained on each
+> release, five initialisations; penalty (cm, mean ± SD) against the same model
+> trained on real data, paired within initialisation.
+>
+> | Model (real-data error) | Tested on real faces: SimSwap A / B / FAMS | Tested on the release: SimSwap A / B / FAMS |
+> |---|---|---|
+> | Eyes-only MobileNet-V3 (4.95) | +2.71 ± 0.93 / +3.56 ± 0.39 / **+1.16 ± 0.10** | **+2.44 ± 0.36 / +1.98 ± 0.22** / +2.72 ± 0.21 |
+> | Eyes-only MGazeNet (5.14) | +4.79 ± 0.94 / +6.77 ± 0.56 / **+0.96 ± 0.27** | +2.83 ± 0.38 / +2.95 ± 0.12 / **+2.04 ± 0.17** |
+> | Face-only MobileViT (5.29) | +4.51 ± 0.40 / +3.87 ± 0.59 / **+1.44 ± 0.26** | +3.67 ± 0.16 / +2.98 ± 0.33 / **+2.24 ± 0.29** |
 >
 > **Releasing eye geometry instead of pixels does not escape the trade-off.** The
 > obvious alternative to de-identified imagery is to release no imagery: FaceMesh
@@ -1059,12 +1168,18 @@ modalities; the evidence does not reach them.
 > almost no gaze signal across participants. For gaze data there is no part of the
 > face that is useful for the task and safe to release unchanged.
 >
-> **The operative threat is release-only linkage, and it lives outside the edit
-> domain.** An attacker holding photographs of participants is defeated by every
-> full-synthesis method we tested (A1 at or near the floor). An attacker holding
-> only the release is not: the same synthetic eye crops that score 0.2% against
-> photographs verify at 43% within the release, and face crops partition exactly
-> by participant. The channels that carry this — hair and skin at the crop border,
+> **Re-identification survives on the face crop; linkability survives
+> everywhere.** Synthesising the eyes defeats an attacker holding the
+> participants' photographs on the eye crops — A1 is at the floor for every
+> full-synthesis method — but not on the face crop: SimSwap's and FAMS's synthetic
+> faces still verify against the participant's own photographs at 18–24% TAR under
+> ArcFace, against a 1.6% floor, and only DeepPrivacy2, which repaints the face,
+> reaches the floor. Linkability is harder still: the same synthetic eye crops
+> that score 0.2% against photographs verify at 43% within the release, and face
+> crops partition exactly by participant. Under the European test for
+> anonymisation, being able to single out each participant's records is enough
+> for a release to remain personal data, whether or not anyone is named
+> [CITE: wp29anon]. The channels that carry this — hair and skin at the crop border,
 > head pose, crop geometry, illumination — are left alone by inner-face editing,
 > and two of them need no face model at all: crop dimensions alone identify 66.7%
 > of participants, photometric statistics alone link at ARI 0.87–0.90. A privacy
@@ -1074,21 +1189,25 @@ modalities; the evidence does not reach them.
 > **Each half of the condition is attainable; their conjunction is not yet.**
 > Release-only linkage falls only when the synthetic identity is not held fixed
 > per participant *and* the release contains nothing the generator leaves
-> untouched. We observed each half separately. The diffusion anonymiser breaks
-> per-participant consistency by construction and keeps most of the gaze signal —
-> models retrained on it lose 0.4–1.3 cm on real faces where SimSwap loses
-> 2.5–6.2 — but leaves the face crop linkable (ARI 0.85–0.94). Full-body
+> untouched; it matters for releases that strip participant identifiers, since
+> one that keeps them is linkable by construction. We observed each half
+> separately. The diffusion anonymiser breaks per-participant consistency by
+> construction and yields models that transfer to real faces — though its pupils
+> carry less gaze than SimSwap's — but leaves the face crop linkable (ARI
+> 0.85–0.94) and, under ArcFace, verifiable against the participant's
+> photographs. Full-body
 > inpainting with a fresh identity per frame meets both halves and breaks
 > discovery of the cohort (face-crop ARI 0.297), but it repaints the eyes, and a
 > gaze model trained on it learns nothing. Even there, an attacker with a few
 > labelled frames per person still verifies 36% of them: the condition blocks
 > discovery, not verification. What a releasable gaze corpus would need is
-> therefore specific: a generator that preserves the ocular geometry the way the
-> diffusion anonymiser does, edits everything the released crop contains, and
+> therefore specific: a generator that keeps the pupil at least as faithfully as
+> face swapping does, produces eyes from which models transfer to real users as
+> the diffusion anonymiser's do, edits everything the released crop contains, and
 > resamples identity per recording session rather than per frame — per-frame
 > resampling breaks the temporal coherence gaze pipelines rely on, and
 > per-session resampling cannot be verified on a single-session corpus like ours.
-> We know of no method that meets all three.
+> We know of no method that meets all four.
 >
 > **Utility has to be measured the way the release will be used.** Deploying a
 > model trained on real data on de-identified crops conflates two things that
@@ -1098,11 +1217,17 @@ modalities; the evidence does not reach them.
 > retraining, and for one architecture a model trained on the swapped release is
 > worse than predicting the mean on real faces. A utility figure for a released
 > gaze corpus should therefore come from models trained on the release and tested
-> on real faces, reported beside the error of predicting the mean gaze point.
+> on real faces, reported beside the error of predicting the mean gaze point —
+> and the pupil should be checked directly, because transfer and information can
+> diverge: the release that transfers best carries less pupil signal than the one
+> that transfers worst.
 >
 > **What this means for releasing gaze data now.** None of the protocols we
-> measured makes a smartphone gaze corpus safe for open deposit, so CognitiveGaze
-> is shared under controlled access, with derived gaze traces in an open tier
+> measured makes a smartphone gaze corpus anonymous in the European sense: a
+> usable release keeps each participant's frames together, so it is linkable by
+> construction, and every gaze-preserving protocol also leaves residual
+> re-identification on the face or eye crops. CognitiveGaze is therefore shared
+> under controlled access, with derived gaze traces in an open tier
 > whose own linkage we measured rather than assumed (ARI 0.033, low but not zero).
 > We release the measurements as a tool, `privaudit`, and a fifteen-item checklist,
 > so that a gaze dataset can be audited against the attacks and floors used here
@@ -1125,12 +1250,12 @@ audit tool are in the supplementary material [CITE: privaudit-repo].
 
 | # | Guideline | Evidence in this paper | Check |
 |---|---|---|---|
-| G1 | **Name both attackers and run both.** Report re-identification from photographs (A1) *and* linkage within the release (A2). | Identical synthetic eye crops: 0.2% under A1, 43% under A2. | privaudit R2–R4 |
+| G1 | **Report re-identification on every released stream, and test linkability.** Run A1 against photographs on each stream, face crop included, and report whether the content singles out participants (A2) as the anonymisation test. | Synthetic eye crops: 0.2% under A1, 43% under A2; synthetic face crops still 18–24% under A1. | privaudit R2–R4 |
 | G2 | **Measure a floor on your own recordings.** Run every attack on a face-free patch of the same frames and quote results against it. | Single-session floor: TAR 1.57%, Rank-1 ~50%, ARI 0.074–0.089. | privaudit R0 |
 | G3 | **Do not buy utility by releasing real eyes.** Retaining genuine ocular crops restores accuracy and releases the biometric with it. | Hybrid recovers 85–106% of utility; real eye crops verify at 62–80%. | privaudit R2–R3 on eye streams |
 | G4 | **Close the channels that need no face model.** Release every crop at one fixed size and normalise per-crop photometry. | Crop size alone: 66.7% identification; photometry alone: ARI 0.87–0.90. | privaudit R5, R6 |
 | G5 | **Meet both halves of the condition.** Do not hold the synthetic identity fixed per participant, and release nothing the generator does not edit. | Only the cell meeting both breaks face-crop linkage (1.000 → 0.297); verification still 36%. | privaudit R2, R3, R7 |
-| G6 | **Measure utility by training on the release.** Test on real faces, and report the predict-the-mean error beside it. | Deployment-only penalties of +10–15 cm shrink to the no-information level after retraining; SimSwap can be worse than the mean. | — (retraining protocol, §9) |
+| G6 | **Measure utility by training on the release, and check the pupil directly.** Test on real faces, report the predict-the-mean error beside it, and measure whether the released pupil still follows true gaze. | Deployment-only penalties of +10–15 cm shrink to the no-information level after retraining; FAMS transfers best yet its pupils track gaze less closely than SimSwap's (17/17 participants). | — (retraining protocol, §9) |
 | G7 | **If any check fails, use controlled access.** Share under an agreement that forbids re-identification and linkage, and state which channels leak. | No protocol tested passes G1–G5 with useful gaze accuracy. | privaudit overall verdict |
 
 ---
@@ -1155,7 +1280,10 @@ now live in §9.5; this section keeps the constraints and a short conclusion.
 > and recruited from a single institution, so we make no claim about clinical
 > populations and describe the contribution as an evaluation of dataset release
 > rather than of home screening. Privacy is measured with two recogniser
-> families, both trained on web-scale face corpora. The structural claim is
+> families, both trained on web-scale face corpora, and they can disagree:
+> FaceNet places the FAMS face crop at its floor where ArcFace does not.
+> Recognition by people who know the participants — who use hairstyle, glasses
+> and face shape, which FAMS preserves — was not measured. The structural claim is
 > tested on one replacement method (two templates), one removal method in two
 > modes and one diffusion method; methods editing in diffusion latent space are
 > untested. Full-body DeepPrivacy2
@@ -1230,7 +1358,9 @@ floor (1.57%), not "borrowed from panel a".
 > (square 13) recovers the utility and, with it, the linkage (0.849). The
 > diffusion anonymiser (circle 14) is the one full-synthesis release near the
 > utility of real data (+0.94 cm, against +3.83 for SimSwap A and +4.51 for
-> DeepPrivacy2), and its face crop keeps it in the linkable
+> DeepPrivacy2) — because models trained on it transfer to real eyes, not
+> because its pupils carry more gaze (§8.3) — and its face crop keeps it in the
+> linkable
 > region (0.853). Diamonds: releasing FaceMesh eye geometry instead of pixels —
 > the least linkable tier (four iris coordinates, ARI 0.267) is also near the
 > no-information level.
@@ -1300,6 +1430,12 @@ floor (1.57%), not "borrowed from panel a".
      ACM Computing Surveys 51(4), 2018.
    - `kairouz21fl` — P. Kairouz et al. Advances and open problems in federated
      learning. Foundations and Trends in ML 14(1–2), 2021.
+1d. **CITE keys added 2026-10-17:** `wp29anon` — Article 29 Data Protection
+   Working Party, Opinion 05/2014 on Anonymisation Techniques, WP216, adopted
+   10 April 2014. `facemesh` — Y. Kartynnik et al., Real-time facial surface
+   geometry from monocular video on mobile GPUs, CVPR Workshops 2019; and
+   A. Ablavatski et al., Real-time pupil tracking from monocular video for digital
+   puppetry, arXiv 2006.11341, 2020 (iris landmarks).
 1b. **ADD to EndNote** (new keys, 2026-10-14):
    - `wilson23gaze` — E. Wilson, F. Shic, E. Jain. Introducing Explicit Gaze
      Constraints to Face Swapping. ETRA 2023. arXiv 2305.16138.

@@ -24,9 +24,13 @@ Chance Rank-1 5.6%; TAR floor 1.57%; ARI floor 0.089 (face) / 0.074 (eye).
    monotonically: from 1.25 to 1.5, face Rank-1 falls 60.8% -> 35.9% and TAR 24.1% -> 10.1%,
    while the pupil's correlation with true horizontal gaze falls 0.675 -> 0.533
    (SimSwap 0.795, original 0.869).
-2. No usable strength reaches the floor on the face crop. At 1.5, the strongest
-   setting that still produces faces in >90% of frames, face A1 is still 6x chance
-   (Rank-1) and 6x floor (TAR).
+2. CORRECTED 2026-10-17: Rank-1 is NOT evidence here — on single-session data its
+   measured floor is 50.5% (face-free patch, §7), not 5.6% chance; every FAMS Rank-1
+   is at or below that floor. TAR@1e-3 is the evidence. ArcFace face TAR [95% CI]:
+   1.25 24.1% [15.3, 33.6]; 1.35 14.1% [5.9, 23.5]; 1.5 10.1% [3.0, 19.3] — above its
+   1.6% floor at every usable strength. FaceNet face TAR: 1.25 5.9% [2.2, 10.5];
+   1.35 2.6%; 1.5 2.2% — at its own 3.52% floor from 1.35. The two recognisers
+   disagree on FAMS; at 1.35–1.5 the face crop is private by FaceNet, not by ArcFace.
 3. Linkability does not move with strength: face ARI 0.81-0.90 at every usable degree,
    eye ARI ~0.28-0.31 throughout. The strength parameter edits the inner face; the
    channels that link (border, pose, crop geometry) are outside it — the two-part
@@ -34,9 +38,10 @@ Chance Rank-1 5.6%; TAR floor 1.57%; ARI floor 0.089 (face) / 0.074 (eye).
 4. Eye-crop A1 stays at floor at every degree, as at 1.25.
 5. Beyond 1.5 the generator degrades rather than anonymises (19-100% non-faces).
 
-**For the paper.** FAMS has no setting that is private on the face crop and keeps the
-pupil signal: each step that lowers face A1 removes gaze information, and none removes
-linkability. Report as a sweep figure/table in §7–8; collapse rate stated explicitly.
+**For the paper.** Each step that lowers FAMS face A1 removes pupil information
+(gaze-x correlation 0.675 -> 0.533 by 1.5), and none removes linkability (face ARI
+0.81-0.90). Whether 1.35-1.5 is private on the face crop depends on the recogniser
+(ArcFace above floor, FaceNet at floor) — report both. Report as a sweep figure/table in §7–8; collapse rate stated explicitly.
 
 ## D. Stream isolation (complete 2026-10-17)
 

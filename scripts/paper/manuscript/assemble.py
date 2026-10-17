@@ -53,7 +53,7 @@ contrib = "This paper makes four contributions.\n\n" + contrib
 def xref(s):
     s = s.replace("§Data Availability", "the Data Availability statement")
     s = s.replace("(§9.6)", "(§10)").replace("§9.6", "§10")
-    s = s.replace("(§8)", "(§7)").replace("§8 found", "§7 found").replace("§8", "§7")
+    s = re.sub(r"§8(?![.\d])", "§7", s)   # old results §8 -> final §7; new text uses §8.x (final) already
     s = s.replace("Table 4", "Table 5@").replace("Table 5,", "Table 6,").replace("Table 5:", "Table 6:")
     s = s.replace("Table 5@", "Table 5")
     s = s.replace("in our earlier analysis", "on these data")
@@ -77,7 +77,7 @@ A("# 6 THREAT MODEL AND PRIVACY EVALUATION\n\n" + threat)
 leak = re.sub(r"(gives the two-part condition as a factorial result, on the face crop,\n.*?floor 1\.6%\)):\n\n\| Edit domain.*?\n\n", 
     r"\1 (Figure 6a). Face-crop linkage is 1.000 with face-mode editing and a fixed identity, 0.982 when either the edit domain is widened to the whole person or the identity is resampled every frame, and 0.297 only when both are; verification falls from 89.7–100% in the first three cells to 35.7% [27, 45] in the fourth.\n\n", leak, flags=re.S)
 assert "| Edit domain" not in leak
-A("# 7 IDENTITY LEAKAGE UNDER DE-IDENTIFICATION\n\nTable 2 summarises the leakage of each SimSwap release under both attackers; Figure 6 gives release-only linkage for every family.\n\n" + leak)
+A("# 7 IDENTITY LEAKAGE UNDER DE-IDENTIFICATION\n\nTable 2 summarises the leakage of each SimSwap release under both attackers; Table 2a gives face-crop re-identification for every family, and Figure 6 linkability.\n\n" + leak)
 P_note = ("**Table 2.** Identity leakage across release strategies. A1: the attacker holds enrolment photographs; "
           "A2: the attacker holds only the release. TAR at FAR = 1e-3 (ArcFace) and ARI at k = 18, with 95% "
           "participant-level bootstrap intervals.\n\n" + tab_P)
@@ -190,6 +190,14 @@ A("# SUPPLEMENTARY FIGURES\n\n![Figure S1](figs_core/fig_core2_utility.pdf)\n\n"
 
 doc = "\n\n".join(pieces)
 doc = doc.replace("@@FIG1@@", FIG1).replace("@@FIG6@@", xref(FIG6)).replace("@@FIG7@@", xref(FIG7))
+# Final table numbering by order of appearance of captions ("**Table X.**"),
+# so tables added with temporary labels (2a, 6b, ...) are numbered sequentially.
+labels = re.findall(r"\*\*Table (\d+[a-z]?)\.\*\*", doc)
+assert len(labels) == len(set(labels)), labels
+num = {lab: str(i + 1) for i, lab in enumerate(labels)}
+doc = re.sub(r"Tables (\d+[a-z]?)–(\d+[a-z]?)", lambda m: f"Tables @{num[m.group(1)]}–@{num[m.group(2)]}", doc)
+doc = re.sub(r"Table (\d+[a-z]?)(?![\d])", lambda m: f"Table @{num[m.group(1)]}" if m.group(1) in num else m.group(0), doc)
+doc = doc.replace("Table @", "Table ").replace("Tables @", "Tables ").replace("–@", "–")
 doc = re.sub(r"\[CITE: ([^\]]+)\]", r"[\1]", doc)
 for x, y in [("floor 1.6%) (Figure 6a).", "floor 1.6%; Figure 6a)."),
              ("its full-body mode — the\npaper's main contribution,", "its full-body mode — the\nmain contribution of the DeepPrivacy2 paper,")]:

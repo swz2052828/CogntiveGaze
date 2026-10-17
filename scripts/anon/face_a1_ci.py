@@ -9,9 +9,10 @@ from pathlib import Path
 
 import numpy as np
 
-R = Path("/springbrook/share/eng/esrpxk/results/face_a1_all")
+import sys
+R = Path(sys.argv[1] if len(sys.argv) > 1 else "/springbrook/share/eng/esrpxk/results/face_a1_all")
 out = {}
-for f in sorted(R.glob("*.scores.npz")):
+for f in sorted(R.glob("*face_a1*.scores.npz") if "sweep" in str(R) else R.glob("*.scores.npz")):
     z = np.load(f); S, py, gs = z["S"].astype(np.float64), z["probe_subject"], z["gallery_subject"]
     own = (py[:, None] == gs[None, :])
     gen, imp = S[own], S[~own]

@@ -19,6 +19,6 @@
     "sweep2_attack": 1327383,
     "sweep2_iris": 1327384
   },
-  "manuscript_updated": false,
+  "manuscript_updated": true,
   "notes": "Degrees >=2.0 collapse (94-100% frames not faces): exclude from privacy claims. Usable range 1.25-1.5."
 }
