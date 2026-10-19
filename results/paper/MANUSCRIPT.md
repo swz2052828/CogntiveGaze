@@ -2,47 +2,31 @@
 
 ## ABSTRACT
 
-Smartphone eye tracking moves oculomotor assessment out of the clinic, but what
-it records is video of the participant's face — which is what blocks the
-dataset sharing the field depends on. Face swapping has been proposed to make
-such video shareable, and has been evaluated by whether the swapped face still
-matches the real one and how much gaze or behaviour survives. Neither
-evaluation asks whether the release can be linked to itself without any
-outside reference, or what a gaze model trained on the release is worth. We
-measure both.
+Smartphone eye tracking moves oculomotor assessment out of the clinic, but it
+records video of the participant's face, which blocks the dataset sharing the
+field depends on. Face de-identification has been proposed as the remedy and
+judged by whether the de-identified face still matches the real one. We measure
+what such a release protects and what a gaze model trained on it is worth.
 
-We introduce CognitiveGaze: 18 participants, seven oculomotor tasks, recorded
-simultaneously by a smartphone and an EyeLink 1000, so every smartphone frame
-carries a physiological ground-truth gaze coordinate rather than a
-screen-target label. Utility is measured by deploying four gaze architectures
-on de-identified crops and by retraining three of them on the de-identified
-release. Privacy is measured on the released crops themselves, with pretrained
-recognisers, two attacker models, and a control establishing what "no identity
-signal" scores on single-session data.
+We introduce CognitiveGaze: 18 participants performing seven oculomotor tasks,
+recorded simultaneously by a smartphone and an EyeLink 1000, so every frame
+carries physiological ground-truth gaze. We evaluate face swapping, inpainting
+and diffusion de-identification with four gaze architectures, deployed on and
+retrained on each release, and with two face recognisers.
 
-The axes do not trade as assumed. Retaining the genuine ocular region recovers
-85–101% of the synthesis penalty in every architecture, and 91–106% when the
-models are retrained on the release — yet those same crops verify identity at
-62–80% TAR at FAR 1e-3 against a measured 1.6% floor, under two unrelated
-recognisers. The eye pixels that make gaze estimation work are the pixels that
-identify. Full synthesis breaks the link between the released eye crops and the
-real face, but the synthetic face crop still verifies against the participant's
-own photographs (18–24% TAR under ArcFace), retraining leaves a 2.2–6.2 cm cost,
-and the release still singles out every participant: an unsupervised partition
-recovers exactly the 18 individuals, even from a 120 px ocular crop containing
-no hair, ears, clothing or face outline. Removal by inpainting fares worse: a
-model retrained on it is no better than predicting the screen centre. A
-diffusion anonymiser yields models that transfer to real faces far better
-(0.4–1.3 cm against 2.5–6.2 cm), but not because it keeps more gaze: its pupils
-follow true gaze less closely than SimSwap's, and stronger settings trade pupil
-signal for identity protection without reducing linkability. Releasing eye
-landmarks instead of pixels links too and carries almost no gaze signal. A
-usable gaze corpus must keep each participant's frames together, so it is
-linkable by construction; within the content, the one configuration that breaks
-linkage — repainting the whole person with a fresh identity every frame — is one
-on which a retrained gaze model learns nothing. We state what a releasable gaze
-corpus would require, and report what our own tiered release leaks when measured
-rather than assumed.
+Retaining the genuine eye region recovers 85–106% of the accuracy lost to
+synthesis, yet those eye crops verify identity at 62–80% against a 1.6% floor:
+the eye pixels that make gaze estimation work are the pixels that identify.
+Synthesising the eyes defeats matching on the eye crops, but synthetic face
+crops still verify at 18–24%, and every release that retains gaze information
+still singles out each participant, which under European anonymisation guidance
+leaves it personal data. Inpainted eyes carry no recoverable gaze. A diffusion
+anonymiser yields the models that transfer best to real faces (0.4–1.3 cm
+against 2.5–6.2 cm), but its pupils follow true gaze less closely than
+face-swapped ones, and stronger settings trade pupil signal for identity without
+reducing linkability. No configuration we tested is both private and useful. We
+state what a releasable gaze corpus requires and release an audit tool and
+checklist.
 
 **CCS Concepts:** • **Security and privacy** → **Pseudonymity, anonymity and untraceability**; • **Human-centered computing** → **Empirical studies in ubiquitous and mobile computing**; • **Computing methodologies** → *Biometrics*.
 
