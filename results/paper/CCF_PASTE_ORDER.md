@@ -552,16 +552,21 @@ axis before the utility table that it reframes.
 > right), local histogram equalisation costs 0.05–0.14 without collapsing it, and
 > a large within-session illumination change — gallery from the dark-screen
 > stimulus blocks, probe from the natural-image blocks — leaves it intact and
-> raises it to 0.918 / 0.931 on unmodified crops. The recogniser is therefore not
-> relying on photometry.
+> raises it to 0.918 / 0.931 on unmodified crops. The recogniser's linkage
+> therefore does not depend on photometry: with brightness, contrast and colour
+> cast removed, it still separates the participants.
 >
-> **Photometry is nonetheless a second, independent linkage channel.** Twenty-one
-> summary statistics per crop — per-channel means, percentiles, white-balance
-> ratios, dynamic range, no structure at all — recover the participants at **ARI
+> **Photometry also links on its own, as a separate channel.** The converse holds
+> as well: photometry does not need the recogniser. Twenty-one summary
+> statistics per crop — per-channel means, percentiles, white-balance ratios,
+> dynamic range, no structure at all — recover the participants at **ARI
 > 0.87–0.90** with no face model whatsoever, and identity replacement does not
 > touch this channel: 0.898 / 0.901 on swapped crops against 0.870 / 0.902 on
-> originals. A release that does not normalise crop photometry is linkable
-> without any recogniser at all.
+> originals. On single-session data this channel mixes the person with the
+> recording (§11). The two channels are independent, so closing one leaves the
+> other: normalising crop photometry removes this channel but not the
+> recogniser's, and a release that does not normalise it is linkable without any
+> recogniser at all.
 >
 > **A second family, and its strongest mode.** DeepPrivacy2 removes identity by
 > inpainting rather than replacing it. Its face mode repaints the detected face
