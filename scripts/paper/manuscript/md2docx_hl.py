@@ -27,6 +27,10 @@ def paras(md):
         elif b.startswith("#"):
             out.append(("head", lines[0])); rest = " ".join(l.strip() for l in lines[1:]).strip()
             if rest: out.append(("par", rest))
+        elif lines[0].startswith("- "):
+            for l in lines:
+                if l.startswith("- "): out.append(("par", l[2:].strip()))
+                elif out: out[-1] = ("par", out[-1][1] + " " + l.strip())
         else:
             out.append(("par", " ".join(l.strip() for l in lines)))
     return out
@@ -118,6 +122,15 @@ for b in blocks(md):
             r = p.add_run(f"[{m.group(1)}: image from the previous manuscript]"); r.italic = True
         else:
             p.add_run().add_picture(BASE + m.group(2).replace(".pdf", ".png"), width=Cm(16))
+        continue
+    if lines[0].startswith("- "):
+        its = []
+        for l in lines:
+            if l.startswith("- "): its.append(l[2:].strip())
+            elif its: its[-1] += " " + l.strip()
+        for it in its:
+            fl = flags_for(it); n_hl[0] += sum(fl); n_hl[1] += len(fl)
+            p = doc.add_paragraph(style="List Bullet"); runs(p, it, fl)
         continue
     text = " ".join(l.strip() for l in lines)
     fl = flags_for(text)

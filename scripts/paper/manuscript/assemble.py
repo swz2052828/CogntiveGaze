@@ -40,7 +40,7 @@ tab_dp2fb = table_after("DeepPrivacy2 **full body** (FB_cse_mask_face")
 tab_fams = table_after("FAMS (diffusion; §8), same five initialisations")
 tab_pair = table_after("### 9b. Table 4")
 tab5 = table_after("### 9c-ter.")
-tab_itr = table_after("**iTracker, condition (i), one initialisation**")
+tab_itr = table_after("**iTracker, retrained (D→R, D→D), one initialisation**")
 tab_bio = table_after("**Which number to anchor on.**")
 tab_cal = table_after("Calibrated, per arm:")
 tab_P = table_after("### Table P")
@@ -85,15 +85,15 @@ A(P_note)
 A("![Figure 6](figs_core/fig_core1_privacy.pdf)\n\n@@FIG6@@")
 
 A("# 8 GAZE UTILITY UNDER DE-IDENTIFICATION\n\n## 8.1 Utility protocol\n\n" + pre)
-A("## 8.2 Models trained on real data (condition (ii))\n\n"
-  "Table 3 reports SimSwap under condition (ii); Table 4 reports DeepPrivacy2 and FAMS under the same models, "
+A("## 8.2 Models trained on real data (R→D)\n\n"
+  "Table 3 reports SimSwap under R→D; Table 4 reports DeepPrivacy2 and FAMS under the same models, "
   "initialisations and harness. Before any DeepPrivacy2 or FAMS number was computed, the real-data arm was re-run "
   "through the same pipeline and reproduced Table 3 to within 0.0012 cm on all 100 folds.\n\n"
-  "**Table 3.** Gaze error (cm) under condition (ii) for SimSwap: trained on real data, deployed on de-identified "
+  "**Table 3.** Gaze error (cm) under R→D for SimSwap: trained on real data, deployed on de-identified "
   "crops. Mean over five folds, then mean ± SD over five independent initialisations; in parentheses, the change "
   "against the same model's real-data baseline. The SD is the noise floor of the comparison (0.04–0.20 cm on the "
   "baseline): no difference smaller than it can be supported in either direction.\n\n" + tab3)
-A("**Table 4.** Condition (ii) for DeepPrivacy2 (face and full-body modes, fixed and per-frame identity) and FAMS "
+A("**Table 4.** R→D for DeepPrivacy2 (face and full-body modes, fixed and per-frame identity) and FAMS "
   "(fresh noise per frame, all 210,924 task frames). Mean ± SD over five initialisations; in parentheses, or as "
   "listed for FAMS, the change against the real-data baseline in Table 3.\n\n"
   "*(a) DeepPrivacy2, face mode*\n\n" + tab_dp2f + "\n\n*(b) DeepPrivacy2, full-body mode*\n\n" + tab_dp2fb +
@@ -106,7 +106,7 @@ A("Deployed on DeepPrivacy2 crops, real-data models are worse than predicting th
   "participant's released crops in those frames are changed as much as in all others, so no original pixels reach "
   "the release. Under deployment alone FAMS looks worse than SimSwap (+4.1 to +5.1 cm, against +2.4 to +3.7 cm for SimSwap A), "
   "and Hybrid recovers 93–100% of its penalty. Section 8.3 shows that most of the DeepPrivacy2 and FAMS penalty "
-  "under condition (ii) is domain shift.")
+  "under R→D is domain shift.")
 A("**Table 5.** Hybrid minus Full Synthetic (cm), paired within initialisation, mean ± SD over five draws; negative "
   "means the genuine ocular crops recover accuracy. All 40 draw-level values are negative, and the across-draw SD "
   "is an order of magnitude below the effect in every cell.\n\n" + tab_pair)
@@ -115,11 +115,11 @@ A("Changing the source template from Identity A to Identity B changes the Full S
   "but the Hybrid error by only −0.34 to +0.86 cm, and Hybrid recovers most of the penalty under both templates "
   "(Table 5). The synthesis penalty depends strongly on the template; the Hybrid error changes much less.")
 
-A("## 8.3 Models retrained on the release (condition (i))\n\n"
-  "**Table 6.** Penalty (cm) against each model's own real-data baseline, under the three conditions: mean over "
-  "MobileNet-V3 Large, AFFNet and MGazeNet, with [min, max] across the three. Condition (i) is the mean over five "
-  "independent initialisations per cell (per-draw SDs 0.01–0.83 cm), against the five-draw real-data mean; "
-  "condition (ii) is recomputed over the same three architectures so the columns are comparable. Retraining uses "
+A("## 8.3 Models retrained on the release (D→R and D→D)\n\n"
+  "**Table 6.** Penalty (cm) against each model's own R→R error (MobileNet-V3 Large 4.98, AFFNet 5.67, MGazeNet "
+  "4.96 cm, five-draw means), under R→D, D→R and D→D: mean over the three architectures, with [min, max] across "
+  "them. D→R and D→D are means over five independent initialisations per cell (per-draw SDs 0.01–0.83 cm); "
+  "R→D is recomputed over the same three architectures so the columns are comparable. Retraining uses "
   "the same recipe and participant partition as the real-data models. iTracker (about 9 h per fold) is reported "
   "separately in Table 8. Negative Hybrid values read as indistinguishable from baseline, not as gains.\n\n" + tab5)
 A("FAMS was retrained on every task frame with the same five initialisations as every other arm. On a 10% frame "
@@ -134,8 +134,8 @@ cter_main = cter_main.replace(
 A(cter_main.strip())
 A("Figure 7 places every protocol on one plane, utility against release-only linkage; Figure S1 shows the per-architecture penalties under all three conditions.")
 A("![Figure 7](figs_core/fig_core3_tradeoff.pdf)\n\n@@FIG7@@")
-A("**Table 8.** iTracker under the three conditions, one initialisation in condition (i). Penalty (cm) against its "
-  "five-draw real-data baseline of 5.85 cm; predicting the mean corresponds to +3.52 cm.\n\n" + tab_itr)
+A("**Table 8.** iTracker under R→D, D→R and D→D, one initialisation for the retrained conditions. Penalty (cm) "
+  "against its five-draw R→R error of 5.85 cm; predicting the mean corresponds to +3.52 cm.\n\n" + tab_itr)
 A(cter_itr.strip())
 A("Fold 2 is hard for every model, real data included (7.3–8.5 cm), which compresses all penalties in that fold. "
   "Tested on the release, the SimSwap Full Synthetic penalty is positive in 148 of 150 fold-level cells (two "
@@ -183,7 +183,7 @@ def caption(head):
 FIG1 = "**Figure 1.** " + caption("**Caption, Figure 1 (data-scarcity cycle).**")
 FIG6 = "**Figure 6.** **Release-only linkage.** " + caption("**Caption, release-only linkage.**")
 FIG7 = "**Figure 7.** " + caption("**Caption, privacy–utility plane.**")
-S1 = "**Figure S1.** **Utility under three training conditions.** " + caption("**Caption, utility under three conditions.**")
+S1 = "**Figure S1.** **Utility under R→D, D→R and D→D.** " + caption("**Caption, utility under three conditions.**")
 S2 = "**Figure S2.** " + caption("**Caption, two attackers (supplement).**")
 A("# SUPPLEMENTARY FIGURES\n\n![Figure S1](figs_core/fig_core2_utility.pdf)\n\n" + S1 +
   "\n\n![Figure S2](figures/fig3_threat_models.pdf)\n\n" + S2)

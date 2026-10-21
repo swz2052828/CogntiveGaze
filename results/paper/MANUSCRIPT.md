@@ -194,7 +194,8 @@ and what it costs, not merely what fails.
 de-identification.** 18 participants, smartphone and EyeLink 1000 recorded
 simultaneously across seven oculomotor tasks. We report the utility cost of
 both de-identification protocols, for two de-identification families, under
-three conditions — trained on real data and deployed on the de-identified
+three train–test conditions besides the real-data reference — trained on real
+data and deployed on the de-identified
 crops, and retrained on the de-identified release then tested on real or on
 de-identified faces — against a measured initialisation noise floor and a
 predict-the-mean reference that marks where a model has learned no gaze at
@@ -656,17 +657,25 @@ information-theoretic one.
 
 ## 8.1 Utility protocol
 
-**Three conditions.** A utility number answers a question only once it says who
-trained the model on what. We report three. In **condition (ii)**, models
-trained on real data are deployed on de-identified crops: the cost to a
-pipeline that receives de-identified input. In **condition (i)**, models are
-retrained on the de-identified release, with the same recipe, participant
-partition and hyperparameters as the real-data models, and tested either on
-**real faces** — a third party training on the released corpus and deploying
-the model on its own users — or on **de-identified faces** — benchmarking on
-the release itself. Condition (ii) is the only one that can separate
-information loss from domain shift when read alongside (i): a penalty that
-retraining removes was shift; one that survives retraining was information.
+**Four train–test conditions.** A utility number answers a question only once
+it says what the model was trained on and what it was tested on. We cross the
+two and name each condition train→test, with R for real and D for
+de-identified data:
+
+- **R→R** — trained and tested on real data. This is the reference: every
+  penalty below is the difference from the same model's R→R error.
+- **R→D** — trained on real data, deployed on de-identified crops: the cost to
+  a pipeline that receives de-identified input.
+- **D→R** — retrained on the de-identified release and tested on real faces: a
+  third party training on the released corpus and deploying the model on its
+  own users.
+- **D→D** — retrained and tested on the de-identified release: benchmarking on
+  the release itself.
+
+Retraining uses the same recipe, participant partition and hyperparameters as
+the R→R models. Read together, R→D and D→R separate domain shift from
+information loss: a penalty that retraining removes was shift; one that
+survives retraining was information.
 
 Two references bound every number. The **initialisation noise floor** is the
 spread of the real-data model over five independent initialisations,
@@ -684,20 +693,20 @@ and crop placement. We report the within-participant correlation of the
 released pupil position with the original one and with the EyeLink gaze
 coordinate, on 4,680 frames identical across all releases.
 
-## 8.2 Models trained on real data (condition (ii))
+## 8.2 Models trained on real data (R→D)
 
-Table 5 reports SimSwap under condition (ii); Table 6 reports DeepPrivacy2 and FAMS under the same models, initialisations and harness. Before any DeepPrivacy2 or FAMS number was computed, the real-data arm was re-run through the same pipeline and reproduced Table 5 to within 0.0012 cm on all 100 folds.
+Table 5 reports SimSwap under R→D; Table 6 reports DeepPrivacy2 and FAMS under the same models, initialisations and harness. Before any DeepPrivacy2 or FAMS number was computed, the real-data arm was re-run through the same pipeline and reproduced Table 5 to within 0.0012 cm on all 100 folds.
 
-**Table 5.** Gaze error (cm) under condition (ii) for SimSwap: trained on real data, deployed on de-identified crops. Mean over five folds, then mean ± SD over five independent initialisations; in parentheses, the change against the same model's real-data baseline. The SD is the noise floor of the comparison (0.04–0.20 cm on the baseline): no difference smaller than it can be supported in either direction.
+**Table 5.** Gaze error (cm) under R→D for SimSwap: trained on real data, deployed on de-identified crops. Mean over five folds, then mean ± SD over five independent initialisations; in parentheses, the change against the same model's real-data baseline. The SD is the noise floor of the comparison (0.04–0.20 cm on the baseline): no difference smaller than it can be supported in either direction.
 
-| Model | Real Data | Full Synthetic (A) | Hybrid (A) | Full Synthetic (B) | Hybrid (B) |
+| Model | R→R (real data) | Full Synthetic (A) | Hybrid (A) | Full Synthetic (B) | Hybrid (B) |
 |---|---|---|---|---|---|
 | iTracker | 5.85 ± 0.14 | 8.85 ± 0.17 (+3.00) | **6.16 ± 0.20 (+0.31)** | 9.48 ± 0.21 (+3.62) | **5.82 ± 0.20 (−0.03)** |
 | MobileNet-V3 Large | 4.98 ± 0.13 | 8.65 ± 0.18 (+3.66) | **5.17 ± 0.16 (+0.18)** | 12.03 ± 0.53 (+7.04) | **6.03 ± 0.25 (+1.04)** |
 | AFFNet | 5.67 ± 0.20 | 8.07 ± 0.25 (+2.41) | **5.85 ± 0.24 (+0.19)** | 9.64 ± 0.53 (+3.98) | **5.74 ± 0.25 (+0.08)** |
 | MGazeNet | 4.96 ± 0.04 | 7.74 ± 0.20 (+2.78) | **5.21 ± 0.21 (+0.24)** | 9.72 ± 0.40 (+4.75) | **5.45 ± 0.25 (+0.48)** |
 
-**Table 6.** Condition (ii) for DeepPrivacy2 (face and full-body modes, fixed and per-frame identity) and FAMS (fresh noise per frame, all 210,924 task frames). Mean ± SD over five initialisations; in parentheses, or as listed for FAMS, the change against the real-data baseline in Table 5.
+**Table 6.** R→D for DeepPrivacy2 (face and full-body modes, fixed and per-frame identity) and FAMS (fresh noise per frame, all 210,924 task frames). Mean ± SD over five initialisations; in parentheses, or as listed for FAMS, the change against the real-data baseline in Table 5.
 
 *(a) DeepPrivacy2, face mode*
 
@@ -719,14 +728,14 @@ Table 5 reports SimSwap under condition (ii); Table 6 reports DeepPrivacy2 and F
 
 *(c) FAMS*
 
-| Model | Real Data | Full Synthetic | Hybrid |
+| Model | R→R (real data) | Full Synthetic | Hybrid |
 |---|---|---|---|
 | iTracker | 5.85 ± 0.14 | +5.06 ± 0.17 | **+0.02 ± 0.07** |
 | MobileNet-V3 Large | 4.98 ± 0.13 | +4.06 ± 0.24 | **+0.27 ± 0.20** |
 | AFFNet | 5.67 ± 0.20 | +4.91 ± 0.20 | **+0.19 ± 0.10** |
 | MGazeNet | 4.96 ± 0.04 | +4.94 ± 0.17 | **+0.35 ± 0.21** |
 
-Deployed on DeepPrivacy2 crops, real-data models are worse than predicting the mean: 15.9–20.5 cm in face mode and 14.6–17.8 cm in full-body mode, against 9.37 cm. A model given repainted eyes is confidently wrong. Hybrid recovers 91–101% of the face-mode penalty and 93–99% of the full-body one, as it does for SimSwap. Every one of the 421,848 full-body frames had the participant detected and repainted. In 2,861 of them (1.4%) the detector also returned a second person region without a surface map, which the pipeline leaves unedited; the participant's released crops in those frames are changed as much as in all others, so no original pixels reach the release. Under deployment alone FAMS looks worse than SimSwap (+4.1 to +5.1 cm, against +2.4 to +3.7 cm for SimSwap A), and Hybrid recovers 93–100% of its penalty. Section 8.3 shows that most of the DeepPrivacy2 and FAMS penalty under condition (ii) is domain shift.
+Deployed on DeepPrivacy2 crops, real-data models are worse than predicting the mean: 15.9–20.5 cm in face mode and 14.6–17.8 cm in full-body mode, against 9.37 cm. A model given repainted eyes is confidently wrong. Hybrid recovers 91–101% of the face-mode penalty and 93–99% of the full-body one, as it does for SimSwap. Every one of the 421,848 full-body frames had the participant detected and repainted. In 2,861 of them (1.4%) the detector also returned a second person region without a surface map, which the pipeline leaves unedited; the participant's released crops in those frames are changed as much as in all others, so no original pixels reach the release. Under deployment alone FAMS looks worse than SimSwap (+4.1 to +5.1 cm, against +2.4 to +3.7 cm for SimSwap A), and Hybrid recovers 93–100% of its penalty. Section 8.3 shows that most of the DeepPrivacy2 and FAMS penalty under R→D is domain shift.
 
 **Table 7.** Hybrid minus Full Synthetic (cm), paired within initialisation, mean ± SD over five draws; negative means the genuine ocular crops recover accuracy. All 40 draw-level values are negative, and the across-draw SD is an order of magnitude below the effect in every cell.
 
@@ -767,11 +776,11 @@ explicit.
 
 Changing the source template from Identity A to Identity B changes the Full Synthetic error by +0.63 to +3.38 cm, but the Hybrid error by only −0.34 to +0.86 cm, and Hybrid recovers most of the penalty under both templates (Table 7). The synthesis penalty depends strongly on the template; the Hybrid error changes much less.
 
-## 8.3 Models retrained on the release (condition (i))
+## 8.3 Models retrained on the release (D→R and D→D)
 
-**Table 8.** Penalty (cm) against each model's own real-data baseline, under the three conditions: mean over MobileNet-V3 Large, AFFNet and MGazeNet, with [min, max] across the three. Condition (i) is the mean over five independent initialisations per cell (per-draw SDs 0.01–0.83 cm), against the five-draw real-data mean; condition (ii) is recomputed over the same three architectures so the columns are comparable. Retraining uses the same recipe and participant partition as the real-data models. iTracker (about 9 h per fold) is reported separately in Table 12. Negative Hybrid values read as indistinguishable from baseline, not as gains.
+**Table 8.** Penalty (cm) against each model's own R→R error (MobileNet-V3 Large 4.98, AFFNet 5.67, MGazeNet 4.96 cm, five-draw means), under R→D, D→R and D→D: mean over the three architectures, with [min, max] across them. D→R and D→D are means over five independent initialisations per cell (per-draw SDs 0.01–0.83 cm); R→D is recomputed over the same three architectures so the columns are comparable. Retraining uses the same recipe and participant partition as the real-data models. iTracker (about 9 h per fold) is reported separately in Table 12. Negative Hybrid values read as indistinguishable from baseline, not as gains.
 
-| Arm | (ii) train real, test de-id | (i) train de-id, test real | (i) train de-id, test de-id |
+| Arm | R→D | D→R | D→D |
 |---|---|---|---|
 | SimSwap A, Full Synthetic | +2.95 [+2.41, +3.66] | +3.83 [+2.47, +4.56] | +2.76 [+2.50, +3.06] |
 | SimSwap A, Hybrid | **+0.20** [+0.18, +0.24] | **+0.09** [+0.01, +0.23] | **−0.04** [−0.14, +0.04] |
@@ -801,7 +810,7 @@ carry. A Full Synthetic release is of little use to a third party who wants a
 gaze model for real users.
 
 **Removal by inpainting leaves no gaze signal at all.** For DeepPrivacy2 the
-picture is the reverse. More than half of the condition (ii) penalty *is*
+picture is the reverse. More than half of the R→D penalty *is*
 domain shift — retraining removes 56–65% of it — but what remains is the
 no-information level, in face mode and in full-body mode alike. Across five
 initialisations, both modes, both identity regimes and both test sets, 580 of
@@ -815,15 +824,15 @@ observation that the generator "alters gaze direction" with a measurement.
 **Hybrid recovers the penalty in every condition.** Restoring the genuine
 ocular ROIs recovers 91–103% of the penalty when the retrained model is
 deployed on real faces and 98–106% on the release, for both families, both
-DeepPrivacy2 modes and both identity regimes; every Hybrid cell in condition
-(i) lies between −0.19 and +0.23 cm of baseline, inside the initialisation noise
+DeepPrivacy2 modes and both identity regimes; every retrained Hybrid cell (D→R
+and D→D) lies between −0.19 and +0.23 cm of baseline, inside the initialisation noise
 floor or at its edge. FAMS falls in the same band (−0.14 to +0.07 cm); its
 percentages (82–111% and 96–106%) are noisier because its Full Synthetic
 penalty on real faces is small, +0.39 cm for AFFNet. The central utility finding
 of Table 7 therefore does not depend on how the model was trained.
 
 **A diffusion anonymiser transfers better; it does not keep more gaze.** FAMS
-looks, under condition (ii), like the others: +4.1 to +5.1 cm. Retrained on its
+looks, under R→D, like the others: +4.1 to +5.1 cm. Retrained on its
 release and deployed on real faces, models lose only +0.94 cm on average —
 +1.15 ± 0.03 (MobileNet-V3), +0.39 ± 0.21 (AFFNet), +1.29 ± 0.06 (MGazeNet) —
 against +3.83 for SimSwap A and +4.51 for DeepPrivacy2, and FAMS is better than
@@ -899,7 +908,7 @@ end user to enrol, which a released training corpus cannot assume.
 models are trained on the release, resampling the synthetic identity every
 frame changes utility by −0.63 to +0.19 cm against a fixed identity, across
 both DeepPrivacy2 modes, both arms and both test sets — never worse by more
-than 0.19 cm. In condition (ii) the Full
+than 0.19 cm. Under R→D the Full
 Synthetic arm moves by up to 1.2 cm, but there both regimes are already worse
 than predicting the mean. What destroys utility is repainting the eyes — and
 repainting everything the crop contains, eyes included, is what §7 found
@@ -911,9 +920,9 @@ Figure 7 places every protocol on one plane, utility against release-only linkag
 
 **Figure 7.** **Privacy against utility for every protocol tested.** Horizontal: gaze-error penalty of a model retrained on the release and deployed on real faces (mean of three architectures). Vertical: release-only linkage, the ARI at k = 18 of the most linkable crop the release contains (face or eye ROI). Circles: Full Synthetic; squares: Hybrid (original eyes); star: unprocessed data. Dashed red: no-information reference (predicting the mean gaze point); dashed grey: linkage floor. The shaded corner — private and useful — contains no protocol. Hybrid sits at the utility of real data and the linkage of real data; SimSwap and DeepPrivacy2 Full Synthetic lose most of the gaze signal and none of the linkage. The single point that leaves the top row (DeepPrivacy2 full body with a fresh identity per frame, ARI 0.297) is one on which a retrained gaze model learns nothing (+4.34 cm, at the no-information reference). Restoring the original eyes to it (square 13) recovers the utility and, with it, the linkage (0.849). The diffusion anonymiser (circle 14) is the one full-synthesis release near the utility of real data (+0.94 cm, against +3.83 for SimSwap A and +4.51 for DeepPrivacy2) — because models trained on it transfer to real eyes, not because its pupils carry more gaze (§8.3) — and its face crop keeps it in the linkable region (0.853). Diamonds: releasing FaceMesh eye geometry instead of pixels — the least linkable tier (four iris coordinates, ARI 0.267) is also near the no-information level.
 
-**Table 12.** iTracker under the three conditions, one initialisation in condition (i). Penalty (cm) against its five-draw real-data baseline of 5.85 cm; predicting the mean corresponds to +3.52 cm.
+**Table 12.** iTracker under R→D, D→R and D→D, one initialisation for the retrained conditions. Penalty (cm) against its five-draw R→R error of 5.85 cm; predicting the mean corresponds to +3.52 cm.
 
-| Arm | (ii) | (i) test real | (i) test de-id |
+| Arm | R→D | D→R | D→D |
 |---|---|---|---|
 | SimSwap A, Full Synthetic / Hybrid | +3.00 / **+0.31** | +7.50 / **−0.10** | +3.01 / **+0.00** |
 | SimSwap B, Full Synthetic / Hybrid | +3.62 / **−0.03** | +12.05 / **+0.62** | +4.38 / **+0.43** |
@@ -1114,7 +1123,7 @@ run with five initialisations for three architectures and one for iTracker
 De-identification for gaze data has been judged by whether the
 face still looks like the participant. We measured instead whether the release
 can still be linked and whether a model trained on it still works, across three
-generator families, two release forms and three training conditions. No
+generator families, two release forms and four train–test conditions. No
 configuration was both: the ones that keep the gaze signal keep the identity,
 and the one that breaks linkage leaves nothing to learn from. The two-part
 condition says what a generator would have to do to change that, and the audit
@@ -1128,7 +1137,7 @@ CognitiveGaze contains facial video and is shared under controlled access: resea
 
 ![Figure S1](figs_core/fig_core2_utility.pdf)
 
-**Figure S1.** **Utility under three training conditions.** **(a)** Full Synthetic and **(b)** Hybrid penalty against each model's real-data baseline, for models trained on real data and tested on de-identified crops (grey), and models retrained on the release and tested on real (green) or de-identified (purple) faces. Bars: mean of three architectures; dots: each architecture. Red band: no-information reference; grey band: initialisation noise floor. Retraining removes most of the DeepPrivacy2 penalty but stops at the no-information level; it does not remove SimSwap's; for FAMS it removes most of it on real faces (+0.94 cm) and less on the release (+2.15 cm). Hybrid recovers most of the penalty in every condition and, once retrained, lies within the noise floor.
+**Figure S1.** **Utility under R→D, D→R and D→D.** **(a)** Full Synthetic and **(b)** Hybrid penalty against each model's R→R baseline, for models trained on real data and tested on de-identified crops (R→D, grey), and models retrained on the release and tested on real (D→R, green) or de-identified (D→D, purple) faces. Bars: mean of three architectures; dots: each architecture. Red band: no-information reference; grey band: initialisation noise floor. Retraining removes most of the DeepPrivacy2 penalty but stops at the no-information level; it does not remove SimSwap's; for FAMS it removes most of it on real faces (+0.94 cm) and less on the release (+2.15 cm). Hybrid recovers most of the penalty in every condition and, once retrained, lies within the noise floor.
 
 ![Figure S2](figures/fig3_threat_models.pdf)
 

@@ -69,9 +69,9 @@ eye = {name: {e: boot(p.format(e)) for e in ("appleLeftEye", "appleRightEye")}
        for name, p in eye_arms}
 
 util = j("anon_train/table3_three_conditions.json")
-COND = [("ii", "(ii) train real, test de-id"),
-        ("i_real", "(i) train de-id, test real"),
-        ("i_anon", "(i) train de-id, test de-id")]
+COND = [("ii", "R→D: train real, test de-id"),
+        ("i_real", "D→R: train de-id, test real"),
+        ("i_anon", "D→D: train de-id, test de-id")]
 ARMS = [("swap1", "SimSwap A"), ("swap2", "SimSwap B"),
         ("dp2s", "DP2 face,\nfixed"), ("dp2f", "DP2 face,\nper frame"),
         ("dp2fbs", "DP2 full\nbody, fixed"), ("dp2fbf", "DP2 full\nbody, per frame"),
@@ -163,8 +163,8 @@ for ax, suffix, title in ((axes[0], "", "(a) Full Synthetic: face AND eyes de-id
         ax.axhspan(-0.2, 0.2, color="grey", alpha=0.15)
         ax.text(len(ARMS) - 0.5, 0.22, "init noise floor (2 x SD)", color="grey",
                 ha="right", fontsize=8)
-    ax.set_xticks(x, [l for _, l in ARMS])
-    ax.set_ylabel("error penalty vs real-data model (cm)")
+    ax.set_xticks(x, [l for _, l in ARMS], fontsize=7.5)
+    ax.set_ylabel("error penalty vs R→R (cm)")
     ax.set_title(title, fontsize=9)
 axes[0].legend(frameon=False, fontsize=8, loc="upper left")
 nd = sorted({util[bb][a][c]["n_draws"] for bb in BBS for a, _ in ARMS
@@ -172,7 +172,7 @@ nd = sorted({util[bb][a][c]["n_draws"] for bb in BBS for a, _ in ARMS
 nd_txt = (f"{nd[0]} initialisation draw{'s' if nd[0] > 1 else ''}" if len(nd) == 1
           else f"{nd[0]}-{nd[-1]} initialisation draws")
 fig.text(0.5, -0.01, "bars: mean of MobileNet-V3, AFFNet, MGazeNet; dots: each backbone. "
-         f"(ii) uses 5 initialisation draws, (i) {nd_txt}.",
+         f"R→D uses 5 initialisation draws, D→R and D→D {nd_txt}.",
          ha="center", fontsize=8)
 fig.tight_layout()
 fig.savefig(OUT / "fig_core2_utility.png", dpi=200, bbox_inches="tight")

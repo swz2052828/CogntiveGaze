@@ -228,7 +228,8 @@ dataset paper with de-identification attached.
 > de-identification.** 18 participants, smartphone and EyeLink 1000 recorded
 > simultaneously across seven oculomotor tasks. We report the utility cost of
 > both de-identification protocols, for two de-identification families, under
-> three conditions — trained on real data and deployed on the de-identified
+> three train–test conditions besides the real-data reference — trained on real
+> data and deployed on the de-identified
 > crops, and retrained on the de-identified release then tested on real or on
 > de-identified faces — against a measured initialisation noise floor and a
 > predict-the-mean reference that marks where a model has learned no gaze at
@@ -734,17 +735,25 @@ TAR at FAR = 1e-3, ArcFace, with 95% subject-level bootstrap CI.
 
 ### 9-pre. Utility protocol — INSERT at the head of the section
 
-> **Three conditions.** A utility number answers a question only once it says who
-> trained the model on what. We report three. In **condition (ii)**, models
-> trained on real data are deployed on de-identified crops: the cost to a
-> pipeline that receives de-identified input. In **condition (i)**, models are
-> retrained on the de-identified release, with the same recipe, participant
-> partition and hyperparameters as the real-data models, and tested either on
-> **real faces** — a third party training on the released corpus and deploying
-> the model on its own users — or on **de-identified faces** — benchmarking on
-> the release itself. Condition (ii) is the only one that can separate
-> information loss from domain shift when read alongside (i): a penalty that
-> retraining removes was shift; one that survives retraining was information.
+> **Four train–test conditions.** A utility number answers a question only once
+> it says what the model was trained on and what it was tested on. We cross the
+> two and name each condition train→test, with R for real and D for
+> de-identified data:
+>
+> - **R→R** — trained and tested on real data. This is the reference: every
+>   penalty below is the difference from the same model's R→R error.
+> - **R→D** — trained on real data, deployed on de-identified crops: the cost to
+>   a pipeline that receives de-identified input.
+> - **D→R** — retrained on the de-identified release and tested on real faces: a
+>   third party training on the released corpus and deploying the model on its
+>   own users.
+> - **D→D** — retrained and tested on the de-identified release: benchmarking on
+>   the release itself.
+>
+> Retraining uses the same recipe, participant partition and hyperparameters as
+> the R→R models. Read together, R→D and D→R separate domain shift from
+> information loss: a penalty that retraining removes was shift; one that
+> survives retraining was information.
 >
 > Two references bound every number. The **initialisation noise floor** is the
 > spread of the real-data model over five independent initialisations,
@@ -769,7 +778,7 @@ Condition (ii): trained on real data, deployed on de-identified crops. Mean over
 is relative to that model's own Real Data baseline. Replication design and the
 three checked timeouts are in `results/INITVAR_VALIDATION.md`.
 
-| Model | Real Data | Full Synthetic (A) | Hybrid (A) | Full Synthetic (B) | Hybrid (B) |
+| Model | R→R (real data) | Full Synthetic (A) | Hybrid (A) | Full Synthetic (B) | Hybrid (B) |
 |---|---|---|---|---|---|
 | iTracker | 5.85 ± 0.14 | 8.85 ± 0.17 (+3.00) | **6.16 ± 0.20 (+0.31)** | 9.48 ± 0.21 (+3.62) | **5.82 ± 0.20 (−0.03)** |
 | MobileNet-V3 Large | 4.98 ± 0.13 | 8.65 ± 0.18 (+3.66) | **5.17 ± 0.16 (+0.18)** | 12.03 ± 0.53 (+7.04) | **6.03 ± 0.25 (+1.04)** |
@@ -824,7 +833,7 @@ frame), so no original pixels reach the release.
 FAMS (diffusion; §8), same five initialisations, on every task frame (full
 generation, 210,924 frames, none undetected):
 
-| Model | Real Data | Full Synthetic | Hybrid |
+| Model | R→R (real data) | Full Synthetic | Hybrid |
 |---|---|---|---|
 | iTracker | 5.85 ± 0.14 | +5.06 ± 0.17 | **+0.02 ± 0.07** |
 | MobileNet-V3 Large | 4.98 ± 0.13 | +4.06 ± 0.24 | **+0.27 ± 0.20** |
@@ -892,7 +901,7 @@ penalty taken against the five-draw real-data mean (per-draw SDs 0.01–0.83 cm,
 `results/anon_train/table3_three_conditions.json`). iTracker (~9 h per fold) was
 retrained once per arm and is reported separately below. Same recipe and participant partition as the real-data models.
 
-| Arm | (ii) train real, test de-id | (i) train de-id, test real | (i) train de-id, test de-id |
+| Arm | R→D | D→R | D→D |
 |---|---|---|---|
 | SimSwap A, Full Synthetic | +2.95 [+2.41, +3.66] | +3.83 [+2.47, +4.56] | +2.76 [+2.50, +3.06] |
 | SimSwap A, Hybrid | **+0.20** [+0.18, +0.24] | **+0.09** [+0.01, +0.23] | **−0.04** [−0.14, +0.04] |
@@ -929,7 +938,7 @@ subset and again on all frames (by 2.89 and 3.57 cm on average).
 > gaze model for real users.
 >
 > **Removal by inpainting leaves no gaze signal at all.** For DeepPrivacy2 the
-> picture is the reverse. More than half of the condition (ii) penalty *is*
+> picture is the reverse. More than half of the R→D penalty *is*
 > domain shift — retraining removes 56–65% of it — but what remains is the
 > no-information level, in face mode and in full-body mode alike. Across five
 > initialisations, both modes, both identity regimes and both test sets, 580 of
@@ -943,15 +952,15 @@ subset and again on all frames (by 2.89 and 3.57 cm on average).
 > **Hybrid recovers the penalty in every condition.** Restoring the genuine
 > ocular ROIs recovers 91–103% of the penalty when the retrained model is
 > deployed on real faces and 98–106% on the release, for both families, both
-> DeepPrivacy2 modes and both identity regimes; every Hybrid cell in condition
-> (i) lies between −0.19 and +0.23 cm of baseline, inside the initialisation noise
+> DeepPrivacy2 modes and both identity regimes; every retrained Hybrid cell (D→R
+> and D→D) lies between −0.19 and +0.23 cm of baseline, inside the initialisation noise
 > floor or at its edge. FAMS falls in the same band (−0.14 to +0.07 cm); its
 > percentages (82–111% and 96–106%) are noisier because its Full Synthetic
 > penalty on real faces is small, +0.39 cm for AFFNet. The central utility finding
 > of Table 4 therefore does not depend on how the model was trained.
 >
 > **A diffusion anonymiser transfers better; it does not keep more gaze.** FAMS
-> looks, under condition (ii), like the others: +4.1 to +5.1 cm. Retrained on its
+> looks, under R→D, like the others: +4.1 to +5.1 cm. Retrained on its
 > release and deployed on real faces, models lose only +0.94 cm on average —
 > +1.15 ± 0.03 (MobileNet-V3), +0.39 ± 0.21 (AFFNet), +1.29 ± 0.06 (MGazeNet) —
 > against +3.83 for SimSwap A and +4.51 for DeepPrivacy2, and FAMS is better than
@@ -1025,16 +1034,16 @@ subset and again on all frames (by 2.89 and 3.57 cm on average).
 > models are trained on the release, resampling the synthetic identity every
 > frame changes utility by −0.63 to +0.19 cm against a fixed identity, across
 > both DeepPrivacy2 modes, both arms and both test sets — never worse by more
-> than 0.19 cm. In condition (ii) the Full
+> than 0.19 cm. Under R→D the Full
 > Synthetic arm moves by up to 1.2 cm, but there both regimes are already worse
 > than predicting the mean. What destroys utility is repainting the eyes — and
 > repainting everything the crop contains, eyes included, is what §8 found
 > necessary to break face-crop linkage.
 
-**iTracker, condition (i), one initialisation** (penalty against its five-draw
+**iTracker, retrained (D→R, D→D), one initialisation** (penalty against its five-draw
 real-data baseline, 5.85 cm; predicting the mean = +3.52 cm):
 
-| Arm | (ii) | (i) test real | (i) test de-id |
+| Arm | R→D | D→R | D→D |
 |---|---|---|---|
 | SimSwap A, Full Synthetic / Hybrid | +3.00 / **+0.31** | +7.50 / **−0.10** | +3.01 / **+0.00** |
 | SimSwap B, Full Synthetic / Hybrid | +3.62 / **−0.03** | +12.05 / **+0.62** | +4.38 / **+0.43** |
@@ -1284,7 +1293,7 @@ now live in §9.5; this section keeps the constraints and a short conclusion.
 > **Conclusion.** De-identification for gaze data has been judged by whether the
 > face still looks like the participant. We measured instead whether the release
 > can still be linked and whether a model trained on it still works, across three
-> generator families, two release forms and three training conditions. No
+> generator families, two release forms and four train–test conditions. No
 > configuration was both: the ones that keep the gaze signal keep the identity,
 > and the one that breaks linkage leaves nothing to learn from. The two-part
 > condition says what a generator would have to do to change that, and the audit
@@ -1369,9 +1378,9 @@ floor (1.57%), not "borrowed from panel a".
 **Caption, utility under three conditions.**
 
 > **(a)** Full Synthetic and **(b)** Hybrid penalty against each model's
-> real-data baseline, for models trained on real data and tested on
-> de-identified crops (grey), and models retrained on the release and tested on
-> real (green) or de-identified (purple) faces. Bars: mean of three
+> R→R baseline, for models trained on real data and tested on de-identified
+> crops (R→D, grey), and models retrained on the release and tested on real
+> (D→R, green) or de-identified (D→D, purple) faces. Bars: mean of three
 > architectures; dots: each architecture. Red band: no-information reference;
 > grey band: initialisation noise floor. Retraining removes most of the
 > DeepPrivacy2 penalty but stops at the no-information level; it does not remove

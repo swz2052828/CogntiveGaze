@@ -58,6 +58,14 @@ for b in blocks:
             p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p.add_run().add_picture(BASE + path.replace(".pdf", ".png"), width=Cm(16))
         continue
+    if lines[0].startswith("- "):
+        its = []
+        for l in lines:
+            if l.startswith("- "): its.append(l[2:].strip())
+            elif its: its[-1] += " " + l.strip()
+        for it in its:
+            p = doc.add_paragraph(style="List Bullet"); runs(p, it)
+        continue
     text = " ".join(l.strip() for l in lines)
     p = doc.add_paragraph(); runs(p, text)
     p.paragraph_format.space_after = Pt(6)
