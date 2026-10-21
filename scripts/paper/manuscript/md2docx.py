@@ -16,7 +16,7 @@ FIX = {"ABSTRACT": "Abstract", "1 INTRODUCTION": "1 Introduction", "2 RELATED WO
        "8 GAZE UTILITY UNDER DE-IDENTIFICATION": "8 Gaze Utility under De-identification",
        "9 DISCUSSION": "9 Discussion", "10 DESIGN GUIDELINES FOR RELEASING GAZE DATA": "10 Design Guidelines for Releasing Gaze Data",
        "11 LIMITATIONS": "11 Limitations", "12 CONCLUSION": "12 Conclusion", "DATA AVAILABILITY": "Data Availability",
-       "SUPPLEMENTARY FIGURES": "Supplementary Figures"}
+       "SUPPLEMENTARY FIGURES": "Supplementary Figures", "SUPPLEMENTARY MATERIAL": "Supplementary Material"}
 def runs(par, text):
     # **bold**, *italic*, `code`
     for tok in re.split(r"(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|`[^`]+`)", text):

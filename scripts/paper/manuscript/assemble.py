@@ -204,5 +204,5 @@ for x, y in [("floor 1.6%) (Figure 6a).", "floor 1.6%; Figure 6a)."),
     assert x in doc, x
     doc = doc.replace(x, y)
 doc = re.sub(r"\n{3,}", "\n\n", doc)
-open("/springbrook/share/eng/esrpxk/results/paper/MANUSCRIPT.md", "w").write(doc + "\n")
+open("/springbrook/share/eng/esrpxk/results/paper/MANUSCRIPT_long.md", "w").write(doc + "\n")
 print(len(doc.split()), "words")
