@@ -26,6 +26,15 @@ def runs(par, text):
         elif tok.startswith("*") and tok.endswith("*") and len(tok) > 2: r = par.add_run(tok[1:-1]); r.italic = True
         else: par.add_run(tok)
 blocks = re.split(r"\n\s*\n", md.strip())
+_fixed = []
+for _b in blocks:
+    _ls = _b.split("\n")
+    _k = next((i for i, l in enumerate(_ls) if l.startswith("|")), None)
+    if _k and not _ls[0].startswith("|"):
+        _fixed += ["\n".join(_ls[:_k]), "\n".join(_ls[_k:])]
+    else:
+        _fixed.append(_b)
+blocks = _fixed
 for b in blocks:
     lines = b.split("\n")
     if b.startswith("# ") and lines[0].startswith("# Keep"):

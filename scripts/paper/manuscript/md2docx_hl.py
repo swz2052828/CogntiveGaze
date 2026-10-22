@@ -16,7 +16,15 @@ def strip(t):
     return re.sub(r"\*\*|`|(?<!\w)\*(?=\S)|(?<=\S)\*(?!\w)", "", t)
 
 def blocks(md):
-    return [b for b in re.split(r"\n\s*\n", md.strip())]
+    out = []
+    for b in re.split(r"\n\s*\n", md.strip()):
+        ls = b.split("\n")
+        k = next((i for i, l in enumerate(ls) if l.startswith("|")), None)
+        if k and not ls[0].startswith("|"):
+            out += ["\n".join(ls[:k]), "\n".join(ls[k:])]
+        else:
+            out.append(b)
+    return out
 
 def paras(md):
     out = []

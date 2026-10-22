@@ -66,6 +66,7 @@ for k, v in T.items():
     s = s.replace(f"@@{k}@@", v)
 assert "@@" not in s
 s = re.sub(r"\n{3,}", "\n\n", s)
+s = re.sub(r"(?m)^(\*\([a-z]\)[^\n]*\*)\n(?=\|)", r"\1\n\n", s)   # sub-table labels need their own paragraph
 open("MANUSCRIPT_condensed.md", "w").write(s)
 main = s.split("# SUPPLEMENTARY MATERIAL")[0]
 print("main words", len(main.split()), "| supplement", len(s.split("# SUPPLEMENTARY MATERIAL")[1].split()), "| abstract", len(abstract.split()))

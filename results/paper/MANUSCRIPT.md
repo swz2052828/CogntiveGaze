@@ -336,6 +336,7 @@ CognitiveGaze contains facial video and is available under controlled access. Re
 **Table S1.** R→D for DeepPrivacy2 and FAMS, as mean ± SD over five initialisations. Values in parentheses (listed directly for FAMS) give the change against R→R (Table 5).
 
 *(a) DeepPrivacy2, face mode*
+
 | Model | Full Synthetic (fixed) | Hybrid (fixed) | Full Synthetic (per frame) | Hybrid (per frame) |
 |---|---|---|---|---|
 | iTracker | 16.44 ± 0.24 (+10.58) | **5.75 ± 0.11 (−0.10)** | 17.50 ± 0.25 (+11.65) | **5.83 ± 0.06 (−0.02)** |
@@ -344,6 +345,7 @@ CognitiveGaze contains facial video and is available under controlled access. Re
 | MGazeNet | 17.06 ± 0.39 (+12.09) | **5.43 ± 0.38 (+0.47)** | 17.04 ± 0.53 (+12.08) | **5.37 ± 0.32 (+0.40)** |
 
 *(b) DeepPrivacy2, full-body mode*
+
 | Model | Full Synthetic (fixed) | Hybrid (fixed) | Full Synthetic (per frame) | Hybrid (per frame) |
 |---|---|---|---|---|
 | iTracker | 15.92 ± 0.29 (+10.06) | **6.01 ± 0.11 (+0.16)** | 17.12 ± 0.35 (+11.27) | **5.96 ± 0.10 (+0.11)** |
@@ -352,6 +354,7 @@ CognitiveGaze contains facial video and is available under controlled access. Re
 | MGazeNet | 15.28 ± 0.29 (+10.31) | **5.22 ± 0.20 (+0.26)** | 15.59 ± 0.19 (+10.63) | **5.35 ± 0.20 (+0.39)** |
 
 *(c) FAMS*
+
 | Model | R→R (real data) | Full Synthetic | Hybrid |
 |---|---|---|---|
 | iTracker | 5.85 ± 0.14 | +5.06 ± 0.17 | **+0.02 ± 0.07** |
