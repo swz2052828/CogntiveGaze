@@ -263,7 +263,7 @@ dataset paper with de-identification attached.
 > expression and pose survive while identity does not [CITE: ciagan]; more recent
 > work removes identity with diffusion models, conditioning a generator on the
 > source face so that attributes survive [CITE: fams], or editing in diffusion
-> latent space without training [CITE: fluid]; a separate line anonymises identity at
+> latent space without training [CITE: fluid]. A separate line anonymises identity at
 > generation time, steering text-to-image models away from recognisable faces [CITE: apl]. Face *swapping* methods such as SimSwap and
 > SimSwap++ instead optimise identity *replacement* [CITE: simswap, simswappp].
 > The distinction is expected to matter for gaze: removal methods that inpaint
