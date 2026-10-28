@@ -34,12 +34,12 @@ def delete(p): p._p.getparent().remove(p._p)
 # ---- 1. EndNote fields -> plain text (same as EndNote "Convert to Plain Text")
 body = d.element.body
 runs = list(body.iter(qn("w:r")))
-stack, kill, n_conv = [], [], 0
+stack, kill, n_conv, cite_groups = [], [], 0, []
 for r in runs:
     fc = r.find(qn("w:fldChar"))
     it = r.find(qn("w:instrText"))
     if fc is not None and fc.get(qn("w:fldCharType")) == "begin":
-        stack.append({"runs": [r], "instr": "", "phase": "instr"}); continue
+        stack.append({"runs": [r], "instr": "", "phase": "instr", "result": []}); continue
     if not stack: continue
     top = stack[-1]
     if it is not None and top["phase"] == "instr":
@@ -50,8 +50,11 @@ for r in runs:
         top["runs"].append(r); f = stack.pop()
         if f["instr"].strip().startswith("ADDIN EN."):
             kill += f["runs"]; n_conv += 1
+            if f["instr"].strip().startswith("ADDIN EN.CITE") and f["result"]:
+                cite_groups.append(f["result"])
         continue
     if top["phase"] == "instr": top["runs"].append(r)
+    else: top["result"].append(r)
 for r in kill:
     if r.getparent() is not None: r.getparent().remove(r)
 log.append(f"Converted {n_conv} EndNote fields (citations and bibliography) to plain text")
@@ -97,18 +100,88 @@ rh = find(lambda p: p.text.strip().upper() == "REFERENCES"); rh.style = d.styles
 ah = find(lambda p: "APPENDICES" in p.text.upper() and p.style.name == "Head1"); ah.style = d.styles["AppendixH1"]
 log.append("REFERENCES now uses ReferenceHead and the appendix heading AppendixH1, so neither is auto-numbered as a section")
 
-# ---- 6. Citation range
-for p in d.paragraphs:
-    for r in p.runs:
-        if re.search(r"\[(\d+)-(\d+)\]", r.text):
-            r.text = re.sub(r"\[(\d+)-(\d+)\]", r"[\1–\2]", r.text); log.append("Citation range [33-35] -> [33–35]")
-
-# ---- 7. References in ACM Reference Format
+# ---- 7. Three IMWUT references in the text, renumbering, references in ACM Reference Format
 REFS = open("/tmp/claude-1616450260/-springbrook-share-eng-esrpxk/e65d08c9-0d9a-465f-af83-06ea05e91b43/scratchpad/ms/refs_acm.txt").read().strip().split("\n")
-bib = [p for p in d.paragraphs if p.style.name == "Bib_entry" and p.text.strip()]
-assert len(bib) == len(REFS), (len(bib), len(REFS))
-for p, t in zip(bib, REFS): set_text(p, t, True)
-log.append(f"Rewrote all {len(bib)} references in ACM Reference Format")
+NEW = {
+ "LAI": "H.-Y. Lai, C. G. Sodini, V. Sze, and T. Heldt. 2023. Individualized Tracking of Neurocognitive-State-Dependent Eye-Movement Features Using Mobile Devices. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 7, 1, Article 19 (2023). https://doi.org/10.1145/3580843",
+ "IMON": "S. Huynh, R. K. Balan, and J. Ko. 2021. iMon: Appearance-based Gaze Tracking System on Mobile Devices. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 5, 4, Article 161 (2021). https://doi.org/10.1145/3494999",
+ "ALH": "R. Alharbi, M. Tolba, L. C. Petito, J. Hester, and N. Alshurafa. 2019. To Mask or Not to Mask? Balancing Privacy with Visual Confirmation Utility in Activity-Oriented Wearable Cameras. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 3, 3 (2019), 29 pages. https://doi.org/10.1145/3351230",
+}
+def insert_after(run, pieces):
+    """pieces: list of (text, is_cite). Returns the citation runs created."""
+    created, anchor = [], run._r
+    for text, is_cite in pieces:
+        nr = copy.deepcopy(run._r)
+        for t in nr.findall(qn("w:t")): t.getparent().remove(t)
+        t = OxmlElement("w:t"); t.text = text; t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve"); nr.append(t)
+        anchor.addnext(nr); anchor = nr
+        if is_cite: created.append([nr])
+    return created
+def insert_before_text(par_pred, marker, pieces):
+    p_ = [x for x in d.paragraphs if par_pred(x)][0]
+    for r in p_.runs:
+        if marker in r.text:
+            i = r.text.index(marker); rest = r.text[i:]; r.text = r.text[:i]
+            return insert_after(r, pieces + [(rest, False)])
+    raise SystemExit("marker not found: " + marker)
+cite_groups += insert_before_text(lambda x: x.text.startswith("Oculomotor function is a sensitive marker"), "The data, however",
+    [("Recordings from mobile devices have already been used to track eye-movement features that change with neurocognitive state ", False),
+     ("[@LAI]", True), (". ", False)])
+cite_groups += insert_before_text(lambda x: x.text.startswith("Smartphone gaze estimation."), "AFFNet",
+    [("iMon later brought person-independent appearance-based tracking on phones to 1.49 cm on GazeCapture ", False),
+     ("[@IMON]", True), (". ", False)])
+fd = [x for x in d.paragraphs if x.text.startswith("Face de-identification.")][0]
+cite_groups += insert_after(fd.runs[-1],
+    [(" In ubiquitous computing, Alharbi et al. studied a similar privacy–utility trade-off for activity-oriented wearable cameras, "
+      "examining how much image masking can protect privacy while keeping the visual confirmation that the footage is collected for ", False),
+     ("[@ALH]", True), (".", False)])
+log.append("Inserted three sentences citing IMWUT papers: Lai et al. 2023 (Introduction, clinical motivation), "
+           "iMon (Related Work, Smartphone gaze estimation), Alharbi et al. 2019 (Related Work, Face de-identification)")
+
+order = {id(r): i for i, r in enumerate(body.iter(qn("w:r")))}
+cite_groups = [g for g in cite_groups if g and g[0].getparent() is not None]
+cite_groups.sort(key=lambda g: order[id(g[0])])
+def tokens(inner):
+    out = []
+    for tok in [x.strip() for x in inner.split(",") if x.strip()]:
+        m = re.fullmatch(r"(\d+)\s*[-–]\s*(\d+)", tok)
+        if m: out += list(range(int(m.group(1)), int(m.group(2)) + 1))
+        elif tok.startswith("@"): out.append(tok[1:])
+        else: out.append(int(tok))
+    return out
+def gtext(g): return "".join(t.text or "" for r in g for t in r.findall(qn("w:t")))
+first = []
+for g in cite_groups:
+    for inner in re.findall(r"\[([^\]]*)\]", gtext(g)):
+        for k in tokens(inner):
+            if k not in first: first.append(k)
+uncited = [k for k in range(1, len(REFS) + 1) if k not in first]
+assert not uncited, f"references never cited: {uncited}"
+newnum = {k: i + 1 for i, k in enumerate(first)}
+def fmt(nums):
+    nums = sorted(set(nums)); out, i = [], 0
+    while i < len(nums):
+        j = i
+        while j + 1 < len(nums) and nums[j + 1] == nums[j] + 1: j += 1
+        out.append(f"{nums[i]}–{nums[j]}" if j - i >= 2 else ", ".join(str(n) for n in nums[i:j + 1])); i = j + 1
+    return "[" + ", ".join(out) + "]"
+changed = 0
+for g in cite_groups:
+    old = gtext(g)
+    new = re.sub(r"\[([^\]]*)\]", lambda m: fmt([newnum[k] for k in tokens(m.group(1))]), old)
+    changed += old != new
+    ts = [t for r in g for t in r.findall(qn("w:t"))]
+    ts[0].text = new
+    for t in ts[1:]: t.text = ""
+log.append(f"Renumbered citations by order of first appearance ({len(cite_groups)} citation groups, {changed} changed); ranges use an en dash, e.g. [33–35]")
+final_refs = [NEW[k] if isinstance(k, str) else REFS[k - 1] for k in first]
+bib = [x for x in d.paragraphs if x.style.name == "Bib_entry" and x.text.strip()]
+while len(bib) < len(final_refs):
+    clone = copy.deepcopy(bib[-1]._p); bib[-1]._p.addnext(clone)
+    bib = [x for x in d.paragraphs if x.style.name == "Bib_entry" and (x.text.strip() or x._p is clone)]
+for x, t in zip(bib, final_refs): set_text(x, t, True)
+log.append(f"Reference list rebuilt in citation order: {len(final_refs)} entries in ACM Reference Format (49 existing + 3 IMWUT)")
+renum_report = {k if isinstance(k, str) else f"old {k}": v for k, v in newnum.items()}
 
 # ---- 8. Figures: Image style, FigureCaption style, alt text, grayscale-safe captions and plots
 ALT = [
