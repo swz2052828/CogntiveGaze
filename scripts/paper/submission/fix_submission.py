@@ -100,6 +100,53 @@ rh = find(lambda p: p.text.strip().upper() == "REFERENCES"); rh.style = d.styles
 ah = find(lambda p: "APPENDICES" in p.text.upper() and p.style.name == "Head1"); ah.style = d.styles["AppendixH1"]
 log.append("REFERENCES now uses ReferenceHead and the appendix heading AppendixH1, so neither is auto-numbered as a section")
 
+# ---- 6b. Contributions, Section 10 text, Conclusion, Figure 1 (author-requested restructuring 2026-10-28)
+sys.path.insert(0, "/tmp/claude-1616450260/-springbrook-share-eng-esrpxk/e65d08c9-0d9a-465f-af83-06ea05e91b43/scratchpad/ms")
+import text_blocks as TB
+def write_par(p_, lead, parts):
+    proto = copy.deepcopy(p_.runs[0]._r) if p_.runs else None
+    for r in p_.runs: r._r.getparent().remove(r._r)
+    for h in p_._p.findall(qn("w:hyperlink")): p_._p.remove(h)
+    def add(text, bold):
+        r = p_.add_run(text)
+        if proto is not None and proto.find(qn("w:rPr")) is not None:
+            r._r.insert(0, copy.deepcopy(proto.find(qn("w:rPr"))))
+        r.bold = True if bold else None
+        return r
+    if lead: add(lead, True)
+    for text, is_cite in parts:
+        r = add(text, False)
+        if is_cite: cite_groups.append([r._r])
+def clone_after(p_):
+    new = copy.deepcopy(p_._p); p_._p.addnext(new)
+    return [x for x in d.paragraphs if x._p is new][0]
+def write_block(first_par, items):
+    cur = first_par
+    write_par(cur, *items[0])
+    for lead, parts in items[1:]:
+        cur = clone_after(cur); write_par(cur, lead, parts)
+lead_p = [x for x in d.paragraphs if x.text.startswith("This paper makes four contributions")][0]
+write_par(lead_p, None, [(TB.CONTRIB_LEAD, False)])
+olds = [x for x in d.paragraphs if x.text.startswith(("A privacy evaluation protocol for gaze corpora", "Evidence that gaze utility and identity",
+                                                      "A tested two-part condition", "A utility benchmark under de-identification"))]
+assert len(olds) == 4, len(olds)
+for p_, (lead, parts) in zip(olds, TB.CONTRIB): write_par(p_, lead, parts)
+log.append("Contributions rewritten: C1 CognitiveGaze (§3), C2 utility benchmark (§4, §8), C3 privacy measurement protocol and privaudit (§6, §7), "
+           "C4 privacy–utility analysis and requirements (§7–§10). The eye-region finding is no longer a separate contribution")
+g = [x for x in d.paragraphs if x.text.startswith("Table 12 lists seven guidelines")][0]
+write_block(g, TB.SEC10)
+log.append("Section 10: added five paragraphs explaining the guidelines in three groups and the two innovations of the privacy–utility plane")
+c = [x for x in d.paragraphs if x.text.startswith("De-identification of gaze data has so far been judged")][0]
+write_block(c, TB.CONCL)
+log.append("Conclusion: an opening paragraph plus one paragraph per contribution, each with the result and the next step")
+FIG1 = "/springbrook/share/eng/esrpxk/results/paper/figs_core/fig_cycle_contrib.png"
+from PIL import Image as _Im
+w_, h_ = _Im.open(FIG1).size
+d.part.related_parts["rId12"]._blob = open(FIG1, "rb").read()
+sh1 = d.inline_shapes[0]; sh1.width = 5562600; sh1.height = int(5562600 * h_ / w_)
+cap1 = [x for x in d.paragraphs if x.text.startswith("Figure 1:")][0]; set_text(cap1, TB.FIG1_CAPTION)
+log.append("Figure 1 replaced by the two-part figure (cycle on the left, contributions C1 to C4 mapped to the cycle steps on the right), set to full text width, caption updated")
+
 # ---- 7. Three IMWUT references in the text, renumbering, references in ACM Reference Format
 REFS = open("/tmp/claude-1616450260/-springbrook-share-eng-esrpxk/e65d08c9-0d9a-465f-af83-06ea05e91b43/scratchpad/ms/refs_acm.txt").read().strip().split("\n")
 NEW = {
@@ -185,7 +232,7 @@ renum_report = {k if isinstance(k, str) else f"old {k}": v for k, v in newnum.it
 
 # ---- 8. Figures: Image style, FigureCaption style, alt text, grayscale-safe captions and plots
 ALT = [
- "Circular diagram with six steps: few usable public corpora, designs converge on the same corpora, new clinical data recorded, release blocked by privacy, standard exits fail (highlighted), corpus stays unreleased, which leads back to the first step.",
+ TB.FIG1_ALT,
  "Three panels: a photograph of a seated participant facing a large display with a smartphone and an eye tracker mounted in front of it, an illustration of the investigator at a multi-monitor control workstation, and a flow chart from data acquisition unit to processing computer to storage and analysis.",
  "Left: block diagrams of iTracker, MobileNet-V3, AFFNet and MGazeNet, each taking left-eye, right-eye and face images and a face grid, with AFFNet and MGazeNet adding a face-driven normalisation block. Right: flow chart from smartphone video through ROI extraction and the CNN to predicted gaze, with an MSE loss against EyeLink ground truth.",
  "Two source faces at the top, and two participant frames on the left with the corresponding face-swapped results for each source, in which pose, background and clothing are unchanged.",
