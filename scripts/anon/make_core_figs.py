@@ -148,7 +148,9 @@ for ax, suffix, title in ((axes[0], "", "(a) Full Synthetic: face AND eyes de-id
     for k, (cond, lab) in enumerate(COND):
         vals = [pen(a + suffix, cond) for a, _ in ARMS]
         m = [v.mean() for v in vals]
-        ax.bar(x + (k - 1) * w, m, w, color=cols[k], label=lab, alpha=0.85)
+        # hatch patterns so the three conditions stay distinguishable in grayscale
+        ax.bar(x + (k - 1) * w, m, w, color=cols[k], label=lab, alpha=0.85,
+               hatch=["", "///", "..."][k], edgecolor="black", linewidth=0.5)
         for i, v in enumerate(vals):
             ax.scatter(np.full(3, x[i] + (k - 1) * w), v, s=9, color="black", zorder=3)
     ax.axhline(0, color="black", lw=0.8)

@@ -314,10 +314,11 @@ def fig_threat_models():
         for eye, eshort in eyes:
             c, r = 100 * cross(pc % eye), 100 * release(pr % eye)
             ax.plot([c, r], [y, y], color=GRID, lw=1.0, zorder=1)
-            ax.scatter([c], [y], s=34, color=BLUE, edgecolor="white", lw=1.1, zorder=3,
-                       label="attacker holds enrolment photographs" if y == 0 else None)
-            ax.scatter([r], [y], s=34, color=ORANGE, edgecolor="white", lw=1.1, zorder=3,
-                       label="attacker holds only the release" if y == 0 else None)
+            # circles vs triangles: the two tests stay distinguishable in grayscale
+            ax.scatter([c], [y], s=34, marker="o", color=BLUE, edgecolor="white", lw=1.1, zorder=3,
+                       label="A1: matched against photographs" if y == 0 else None)
+            ax.scatter([r], [y], s=44, marker="^", color=ORANGE, edgecolor="white", lw=1.1, zorder=3,
+                       label="A2: verification within the release" if y == 0 else None)
             # one label per row, always to the RIGHT of the rightmost dot: a label
             # placed left of a near-zero value lands on top of the y tick label
             txt = f"{c:.1f}% \u2192 {r:.0f}%" if abs(r - c) > 6 else f"{c:.0f}% / {r:.0f}%"
@@ -327,7 +328,7 @@ def fig_threat_models():
             y += 1
         y += 0.5
     ax.axvline(floor, color=MUTED, lw=0.8)
-    ax.text(floor + 1.5, -0.9, f"floor {floor:.1f}% (enrolment-photograph attacker)",
+    ax.text(floor + 1.5, -0.9, f"eye floor {floor:.2f}%",
             color=MUTED, fontsize=6.6, va="center")
     rows.append(["floor", "background patch", round(floor, 2), ""])
     ax.set_yticks(ticks); ax.set_yticklabels(labels)
