@@ -167,7 +167,10 @@ log.append(f"Marked the first row of all {len(d.tables)} tables as a header row 
 # ---- 10. File properties
 cp = d.core_properties
 cp.author = ""; cp.last_modified_by = ""
-cp.comments = open("/tmp/claude-1616450260/-springbrook-share-eng-esrpxk/e65d08c9-0d9a-465f-af83-06ea05e91b43/scratchpad/ms/ccs.xml").read().strip()   # CCS XML, as the template instructs
+# CCS XML, as the template instructs. python-docx caps this property at 255 characters,
+# Word does not, so the dc:description element is written directly.
+_desc = cp._element._get_or_add_description()
+_desc.text = open("/tmp/claude-1616450260/-springbrook-share-eng-esrpxk/e65d08c9-0d9a-465f-af83-06ea05e91b43/scratchpad/ms/ccs.xml").read().strip()
 log.append("Pasted the CCS 2012 XML into the Comments document property")
 cp.title = "Keep Your Eyes On It: Measuring Gaze Utility and Re-identification Risk in De-identified Smartphone Gaze Data"
 log.append("Cleared Author and Last Modified By in the file properties and set the document title")
