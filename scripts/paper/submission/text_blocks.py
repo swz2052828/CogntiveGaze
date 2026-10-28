@@ -1,6 +1,6 @@
 # Text for contributions (C1-C4), Section 10 and the Conclusion. Items are (bold lead, [(text, is_citation), ...]).
 # "[18]" is the OLD number of the privaudit reference, renumbered later with every other citation.
-CONTRIB_LEAD = "This paper makes four contributions. The right-hand side of Figure 1 shows which steps of the cycle each one addresses."
+CONTRIB_LEAD = "This paper makes four contributions. Figure @C links each of them to the problem in the cycle and the research question it addresses."
 CONTRIB = [
  ("CognitiveGaze, a smartphone gaze dataset with physiological ground truth (§3).",
   [(" Eighteen participants performed seven clinical oculomotor tasks while a smartphone and an EyeLink 1000 recorded them at the same time, and audio synchronisation gives every video frame a measured gaze coordinate instead of a target position. The protocol departs from the hand-held design that most smartphone gaze corpora inherit, with stimuli on a large display viewed from 80–120 cm. The dataset is shared under controlled access, with an open tier of derived gaze traces.", False)]),
@@ -34,3 +34,10 @@ FIG1_ALT = ("Left: circular diagram of six steps, few usable public corpora, des
             "data held in silos, release blocked by privacy, standard exits fail (highlighted), corpus stays unreleased. Small "
             "badges C1 to C4 sit under the steps they address. Right: four boxes listing contributions C1 to C4 with the steps "
             "each addresses.")
+
+FIG2_CAPTION = ("Figure 2: From the research problem to the contributions. Each row links a problem in the data-scarcity cycle "
+                "of Figure 1 to the research question it raises and to the contribution of this paper that answers it.")
+FIG2_ALT = ("Table-like diagram with a motivation banner at the top and an outcome banner at the bottom. Four rows connect, "
+            "from left to right, a problem from the data-scarcity cycle with its step numbers, a research question, and "
+            "contributions C1 to C4: the CognitiveGaze dataset, the gaze utility benchmark, the privacy measurement "
+            "protocol, and the privacy-utility analysis.")

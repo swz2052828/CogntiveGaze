@@ -139,13 +139,6 @@ log.append("Section 10: added five paragraphs explaining the guidelines in three
 c = [x for x in d.paragraphs if x.text.startswith("De-identification of gaze data has so far been judged")][0]
 write_block(c, TB.CONCL)
 log.append("Conclusion: an opening paragraph plus one paragraph per contribution, each with the result and the next step")
-FIG1 = "/springbrook/share/eng/esrpxk/results/paper/figs_core/fig_cycle_contrib.png"
-from PIL import Image as _Im
-w_, h_ = _Im.open(FIG1).size
-d.part.related_parts["rId12"]._blob = open(FIG1, "rb").read()
-sh1 = d.inline_shapes[0]; sh1.width = 5562600; sh1.height = int(5562600 * h_ / w_)
-cap1 = [x for x in d.paragraphs if x.text.startswith("Figure 1:")][0]; set_text(cap1, TB.FIG1_CAPTION)
-log.append("Figure 1 replaced by the two-part figure (cycle on the left, contributions C1 to C4 mapped to the cycle steps on the right), set to full text width, caption updated")
 
 # ---- 7. Three IMWUT references in the text, renumbering, references in ACM Reference Format
 REFS = open("/tmp/claude-1616450260/-springbrook-share-eng-esrpxk/e65d08c9-0d9a-465f-af83-06ea05e91b43/scratchpad/ms/refs_acm.txt").read().strip().split("\n")
@@ -232,7 +225,7 @@ renum_report = {k if isinstance(k, str) else f"old {k}": v for k, v in newnum.it
 
 # ---- 8. Figures: Image style, FigureCaption style, alt text, grayscale-safe captions and plots
 ALT = [
- TB.FIG1_ALT,
+ "Circular diagram with six steps: few usable public corpora, designs converge on the same corpora, new clinical data recorded, release blocked by privacy, standard exits fail (highlighted), corpus stays unreleased, which leads back to the first step.",
  "Three panels: a photograph of a seated participant facing a large display with a smartphone and an eye tracker mounted in front of it, an illustration of the investigator at a multi-monitor control workstation, and a flow chart from data acquisition unit to processing computer to storage and analysis.",
  "Left: block diagrams of iTracker, MobileNet-V3, AFFNet and MGazeNet, each taking left-eye, right-eye and face images and a face grid, with AFFNet and MGazeNet adding a face-driven normalisation block. Right: flow chart from smartphone video through ROI extraction and the CNN to predicted gaze, with an MSE loss against EyeLink ground truth.",
  "Two source faces at the top, and two participant frames on the left with the corresponding face-swapped results for each source, in which pose, background and clothing are unchanged.",
@@ -292,6 +285,35 @@ log.append("Generative-AI statement: removed 'of Figure X' and 'its', so it no l
 cap2 = [p_ for p_ in d.paragraphs if p_.text.startswith("Figure 2:")][0]
 cap2.runs[-1].text = cap2.runs[-1].text.rstrip() + " (C) Data Flow."
 log.append("Figure 2 caption: added '(C) Data Flow.'")
+
+# ---- 8c. New Figure 2 (contributions), later figures renumbered by +1
+from docx.text.paragraph import Paragraph
+from docx.shared import Emu
+def bump(m):
+    n = int(m.group(2)); return m.group(1) + str(n + 1 if n >= 2 else n)
+nb = 0
+for p_ in d.paragraphs:
+    if p_.style.name == "Bib_entry": continue
+    prev = ""
+    for r in p_.runs:
+        t = r.text
+        if not t: continue
+        new = re.sub(r"(Figures?\s+)(\d+)", bump, t)
+        if prev.rstrip().endswith("Figure") and re.match(r"^\s*\d+", new):
+            new = re.sub(r"^(\s*)(\d+)", lambda m: m.group(1) + str(int(m.group(2)) + 1 if int(m.group(2)) >= 2 else int(m.group(2))), new)
+        if new != t: r.text = new; nb += 1
+        prev = t
+log.append(f"Renumbered Figures 2 to 7 as Figures 3 to 8 in captions and text ({nb} text runs)")
+for p_ in d.paragraphs:
+    for r in p_.runs:
+        if "Figure @C" in r.text: r.text = r.text.replace("Figure @C", "Figure 2")
+c4 = [x for x in d.paragraphs if x.text.startswith("A privacy–utility analysis of three de-identification families")][0]
+img_p = OxmlElement("w:p"); c4._p.addnext(img_p); img = Paragraph(img_p, c4._parent); img.style = d.styles["Image"]
+img.add_run().add_picture("/springbrook/share/eng/esrpxk/results/paper/figs_core/fig_contributions.png", width=Emu(5562600))
+cap_p = OxmlElement("w:p"); img_p.addnext(cap_p); cap = Paragraph(cap_p, c4._parent); cap.style = d.styles["FigureCaption"]
+cap.add_run(TB.FIG2_CAPTION)
+[sh for sh in d.inline_shapes if sh._inline.getparent().getparent().getparent() is img_p][0]._inline.find(qn("wp:docPr")).set("descr", TB.FIG2_ALT)
+log.append("Inserted Figure 2 (problem in the cycle, research question, contribution) after the contribution list, with caption and alt text. Figure 1 is the original cycle again")
 
 # ---- 9. Table header rows
 for t in d.tables:
