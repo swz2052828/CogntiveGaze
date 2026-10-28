@@ -103,9 +103,9 @@ log.append("REFERENCES now uses ReferenceHead and the appendix heading AppendixH
 # ---- 7. Three IMWUT references in the text, renumbering, references in ACM Reference Format
 REFS = open("/tmp/claude-1616450260/-springbrook-share-eng-esrpxk/e65d08c9-0d9a-465f-af83-06ea05e91b43/scratchpad/ms/refs_acm.txt").read().strip().split("\n")
 NEW = {
- "LAI": "H.-Y. Lai, C. G. Sodini, V. Sze, and T. Heldt. 2023. Individualized Tracking of Neurocognitive-State-Dependent Eye-Movement Features Using Mobile Devices. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 7, 1, Article 19 (2023). https://doi.org/10.1145/3580843",
- "IMON": "S. Huynh, R. K. Balan, and J. Ko. 2021. iMon: Appearance-based Gaze Tracking System on Mobile Devices. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 5, 4, Article 161 (2021). https://doi.org/10.1145/3494999",
- "ALH": "R. Alharbi, M. Tolba, L. C. Petito, J. Hester, and N. Alshurafa. 2019. To Mask or Not to Mask? Balancing Privacy with Visual Confirmation Utility in Activity-Oriented Wearable Cameras. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 3, 3 (2019), 29 pages. https://doi.org/10.1145/3351230",
+ "LAI": "Hsin-Yu Lai, Charles G. Sodini, Vivienne Sze, and Thomas Heldt. 2023. Individualized Tracking of Neurocognitive-State-Dependent Eye-Movement Features Using Mobile Devices. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 7, 1, Article 19 (2023). https://doi.org/10.1145/3580843",
+ "IMON": "Sinh Huynh, Rajesh Krishna Balan, and JeongGil Ko. 2021. iMon: Appearance-based Gaze Tracking System on Mobile Devices. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 5, 4, Article 161 (2021). https://doi.org/10.1145/3494999",
+ "ALH": "Rawan Alharbi, Mariam Tolba, Lucia C. Petito, Josiah Hester, and Nabil Alshurafa. 2019. To Mask or Not to Mask? Balancing Privacy with Visual Confirmation Utility in Activity-Oriented Wearable Cameras. *Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.* 3, 3 (2019), 29 pages. https://doi.org/10.1145/3351230",
 }
 def insert_after(run, pieces):
     """pieces: list of (text, is_cite). Returns the citation runs created."""
