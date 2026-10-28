@@ -154,6 +154,25 @@ for rid, path in (("rId22", FIG_S1), ("rId23", FIG_S2)):
     d.part.related_parts[rid]._blob = open(path, "rb").read()
 log.append("Replaced Figure S1 (bars now hatched) and Figure S2 (circles vs triangles, floor label corrected) so both work in grayscale")
 
+# ---- 8b. Author-requested wording fixes (2026-10-28)
+def run_sub(pat, new, where):
+    n = 0
+    for p_ in d.paragraphs:
+        if not where(p_): continue
+        for r in p_.runs:
+            if re.search(pat, r.text):
+                r.text = re.sub(pat, new, r.text); n += 1
+    return n
+n = run_sub(r"\bGT\b", "ground truth", lambda p_: True)
+log.append(f"Replaced the abbreviation GT with 'ground truth' ({n} places: Section 3 opening paragraph and Figure 3 caption)")
+n = run_sub(r"refine the visual presentation of Figure X, including its layout", "refine the visual presentation, including layout",
+            lambda p_: p_.style.name == "AckPara")
+assert n == 1
+log.append("Generative-AI statement: removed 'of Figure X' and 'its', so it no longer refers to a specific figure")
+cap2 = [p_ for p_ in d.paragraphs if p_.text.startswith("Figure 2:")][0]
+cap2.runs[-1].text = cap2.runs[-1].text.rstrip() + " (C) Data Flow."
+log.append("Figure 2 caption: added '(C) Data Flow.'")
+
 # ---- 9. Table header rows
 for t in d.tables:
     tr = t.rows[0]._tr
